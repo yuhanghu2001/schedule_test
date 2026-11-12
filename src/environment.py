@@ -51,18 +51,19 @@ class EdgeEnv:
 
     def reset(self):
         c = self.cfg
+        self.radio_rates = self.rng.uniform(
+            c.radio_rate_min_mbps, c.radio_rate_max_mbps, c.n_terminals,
+        )
         self.tasks = sample_tasks(
             self.rng,
             c.n_tasks,
             c.n_terminals,
             c.n_edges,
-            max_uplink_rate_mbps=c.radio_rate_max_mbps,
+            radio_rates=self.radio_rates,
             min_edge_compute_gflops=float(self.speed[:self.cloud].min()),
             deadline_slack_min=c.deadline_slack_min,
             deadline_slack_max=c.deadline_slack_max,
-            deadline_ceiling_s=c.deadline_ceiling_s,
         )
-        self.radio_rates = self.rng.uniform(c.radio_rate_min_mbps, c.radio_rate_max_mbps, c.n_terminals)
         self.radio_channel_gain = (
             2.0 ** (self.radio_rates / c.radio_bandwidth_mhz) - 1.0
         ) / c.uplink_max_power_w

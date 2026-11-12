@@ -23,7 +23,6 @@
   "local_speed": [12.0, 16.0, 6.0],
   "deadline_slack_min": 1.2,
   "deadline_slack_max": 2.5,
-  "deadline_ceiling_s": 0.95,
   "radio_bandwidth_mhz": 20.0,
   "uplink_max_power_w": 0.5,
   "uplink_circuit_power_w": 0.1,

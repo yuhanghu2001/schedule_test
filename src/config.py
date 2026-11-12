@@ -28,7 +28,6 @@ class Config:
     local_speed: tuple[float, float, float] = (12.0, 16.0, 6.0)
     deadline_slack_min: float = 1.2
     deadline_slack_max: float = 2.5
-    deadline_ceiling_s: float = 0.95
     radio_bandwidth_mhz: float = 20.0
     uplink_max_power_w: float = 0.5
     uplink_circuit_power_w: float = 0.1

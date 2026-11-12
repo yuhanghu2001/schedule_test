@@ -7,32 +7,32 @@ from src.tasks import sample_tasks
 
 class TaskSamplingTest(unittest.TestCase):
     def test_deadline_scales_with_reference_processing_time(self):
-        max_uplink_rate = 180.0
+        radio_rates = np.linspace(60.0, 180.0, 20)
         min_edge_compute = 200.0
         slack_min = 1.2
         slack_max = 2.5
-        deadline_ceiling = 0.95
         tasks = sample_tasks(
             np.random.default_rng(42),
             100,
             20,
             6,
-            max_uplink_rate,
+            radio_rates,
             min_edge_compute,
             slack_min,
             slack_max,
-            deadline_ceiling,
         )
 
         for task in tasks:
+            radio_rate = radio_rates[task.source]
             reference_time = (
-                task.data_mb * 8 / max_uplink_rate
+                task.data_mb * 8 / radio_rate
+                + task.output_mb * 8 / radio_rate
                 + task.compute_gflop / min_edge_compute
             )
-            self.assertGreaterEqual(task.deadline_s, min(reference_time * slack_min,
-                                                         deadline_ceiling))
-            self.assertLessEqual(task.deadline_s, min(reference_time * slack_max,
-                                                      deadline_ceiling))
+            slack = task.deadline_s / reference_time
+            self.assertGreaterEqual(slack, slack_min)
+            self.assertLessEqual(slack, slack_max)
+        self.assertGreater(max(task.deadline_s for task in tasks), 0.95)
 
 
 if __name__ == "__main__":
