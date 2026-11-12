@@ -8,6 +8,7 @@ class PPOTrainer:
     def __init__(self, model, cfg):
         self.model = model
         self.cfg = cfg
+        self.device = next(model.parameters()).device
         self.optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
 
     def collect_episode(self, env):
@@ -51,15 +52,17 @@ class PPOTrainer:
                 for t in indices[start:start + self.cfg.ppo_batch_size].tolist():
                     obs, action, old_logprob, _, _, _ = episode[t]
                     distribution, value = self.model(obs)
-                    action_tensor = torch.tensor(action)
+                    action_tensor = torch.tensor(action, device=self.device)
                     log_ratio = distribution.log_prob(action_tensor) - old_logprob
                     ratio = log_ratio.exp()
-                    advantage = torch.tensor(advantages[t])
+                    advantage = torch.tensor(advantages[t], device=self.device)
                     clipped_ratio = torch.clamp(
                         ratio, 1 - self.cfg.ppo_clip, 1 + self.cfg.ppo_clip)
                     policy_loss = -torch.minimum(
                         ratio * advantage, clipped_ratio * advantage)
-                    value_loss = .5 * (value - torch.tensor(returns[t])).square()
+                    value_loss = .5 * (
+                        value - torch.tensor(returns[t], device=self.device)
+                    ).square()
                     entropy = distribution.entropy()
                     batch_losses.append(policy_loss + self.cfg.vf_coef * value_loss
                                         - self.cfg.ent_coef * entropy)

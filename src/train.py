@@ -34,6 +34,7 @@ def repository_path(path):
 
 def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_score):
     numpy_state = np.random.get_state()
+    device = next(model.parameters()).device
     checkpoint = {
         "model_type": model_type,
         "config": asdict(cfg),
@@ -44,6 +45,7 @@ def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_sc
         "episode": episode,
         "best_evaluation_score": best_score,
         "torch_rng_state": torch.get_rng_state(),
+        "cuda_rng_state": torch.cuda.get_rng_state() if device.type == "cuda" else None,
         "numpy_rng_state": {
             "name": numpy_state[0],
             "keys": torch.from_numpy(numpy_state[1]),
@@ -65,6 +67,10 @@ parser.add_argument("--seed", type=int, help="覆盖新训练运行的配置种�
 parser.add_argument("--run-dir", help="配置和训练指标目录；默认创建北京时间结果目录")
 parser.add_argument("--output", help="run-dir 内 last checkpoint 的文件名")
 parser.add_argument("--resume", help="从 checkpoint 的模型、优化器和 episode 继续训练")
+parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto",
+                    help="模型训练设备；auto 在 CUDA 可用时选择 GPU")
+parser.add_argument("--threads", type=int, default=4,
+                    help="PyTorch CPU 线程数；小图模型默认 4 线程")
 args = parser.parse_args()
 
 config_path = repository_path(args.config)
@@ -79,7 +85,13 @@ else:
     if args.seed is not None:
         cfg = replace(cfg, seed=args.seed)
     model_type = args.model
-torch.set_num_threads(32)
+device_name = (
+    "cuda" if args.device == "auto" and torch.cuda.is_available()
+    else "cpu" if args.device == "auto"
+    else args.device
+)
+device = torch.device(device_name)
+torch.set_num_threads(args.threads)
 torch.manual_seed(cfg.seed)
 np.random.seed(cfg.seed)
 
@@ -89,7 +101,7 @@ last_name = Path(args.output).name if args.output else f"last_{model_type}_ppo.p
 last_output = run_dir / last_name
 best_output = run_dir / f"best_{model_type}_ppo.pt"
 
-model = GATPPO(use_gat=model_type != "flat")
+model = GATPPO(use_gat=model_type != "flat").to(device)
 trainer = PPOTrainer(model, cfg)
 env = model_environment(EdgeEnv(cfg), model_type, cfg.seed)
 start_episode = 0
@@ -99,6 +111,8 @@ if resume_checkpoint:
     trainer.optimizer.load_state_dict(resume_checkpoint["optimizer"])
     start_episode = resume_checkpoint["episode"]
     torch.set_rng_state(resume_checkpoint["torch_rng_state"])
+    if device.type == "cuda" and resume_checkpoint.get("cuda_rng_state") is not None:
+        torch.cuda.set_rng_state(resume_checkpoint["cuda_rng_state"])
     numpy_state = resume_checkpoint["numpy_rng_state"]
     np.random.set_state((numpy_state["name"], numpy_state["keys"].numpy(),
                          numpy_state["position"], numpy_state["has_gauss"],
@@ -118,6 +132,8 @@ run_config = {
     ],
     "best_output": str(best_output),
     "last_output": str(last_output),
+    "device": str(device),
+    "torch_threads": args.threads,
 }
 with open(run_dir / "train_config.json", "x", encoding="utf-8") as file:
     json.dump(run_config, file, ensure_ascii=False, indent=2)

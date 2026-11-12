@@ -36,12 +36,12 @@ class EdgeEnv:
         self.rng = np.random.default_rng(cfg.seed)
         self.cloud = cfg.n_edges
         self.n_graph_nodes = cfg.n_edges + 1
-        self.speed = np.tile(np.array([80., 120., 50.], dtype=np.float32), (cfg.n_edges, 1))
-        self.speed = np.vstack((self.speed, [2000., 6000., 2000.])).astype(np.float32)
+        self.speed = np.tile(np.array(cfg.edge_speed, dtype=np.float32), (cfg.n_edges, 1))
+        self.speed = np.vstack((self.speed, cfg.cloud_speed)).astype(np.float32)
         self.mem_cap = np.array([32.] * cfg.n_edges + [128.], dtype=np.float32)
         self.storage_cap = np.array([1000.] * cfg.n_edges + [4000.], dtype=np.float32)
         self.queue_cap = np.array([60.] * cfg.n_edges + [80.], dtype=np.float32)
-        self.local_speed = np.array([12., 16., 6.], dtype=np.float32)
+        self.local_speed = np.array(cfg.local_speed, dtype=np.float32)
         self.local_mem_cap = np.full(cfg.n_terminals, 8.0, dtype=np.float32)
         self.local_storage_cap = np.full(cfg.n_terminals, 128.0, dtype=np.float32)
         self.local_queue_cap = np.full(cfg.n_terminals, 12.0, dtype=np.float32)
@@ -60,6 +60,7 @@ class EdgeEnv:
             min_edge_compute_gflops=float(self.speed[:self.cloud].min()),
             deadline_slack_min=c.deadline_slack_min,
             deadline_slack_max=c.deadline_slack_max,
+            deadline_ceiling_s=c.deadline_ceiling_s,
         )
         self.radio_rates = self.rng.uniform(c.radio_rate_min_mbps, c.radio_rate_max_mbps, c.n_terminals)
         self.radio_channel_gain = (

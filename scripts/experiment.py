@@ -42,6 +42,8 @@ parser.add_argument(
     default=("gat", "flat", "shuffled_gat", "heuristic"),
 )
 parser.add_argument("--run-dir", help="组合实验目录；默认创建北京时间结果目录")
+parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+parser.add_argument("--threads", type=int, default=4)
 args = parser.parse_args()
 
 cfg = load_config(args.config)
@@ -58,6 +60,8 @@ experiment_config = {
     "episodes": args.episodes,
     "seeds": args.seeds,
     "methods": args.methods,
+    "device": args.device,
+    "torch_threads": args.threads,
 }
 with open(run_dir / "experiment_config.json", "x", encoding="utf-8") as file:
     json.dump(experiment_config, file, ensure_ascii=False, indent=2)
@@ -82,6 +86,8 @@ for method in args.methods:
                 "--model", method,
                 "--seed", str(seed),
                 "--run-dir", str(seed_dir),
+                "--device", args.device,
+                "--threads", str(args.threads),
             ], check=True)
             checkpoint = seed_dir / f"last_{method}_ppo.pt"
             command = [
@@ -90,6 +96,8 @@ for method in args.methods:
                 "--config", evaluation_config_source,
                 "--seed", str(evaluation_seed),
                 "--run-dir", str(seed_dir),
+                "--device", args.device,
+                "--threads", str(args.threads),
             ]
         subprocess.run(command, check=True)
         with open(seed_dir / "metrics.json", encoding="utf-8") as file:

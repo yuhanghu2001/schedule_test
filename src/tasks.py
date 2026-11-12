@@ -26,6 +26,7 @@ def sample_tasks(
     min_edge_compute_gflops: float,
     deadline_slack_min: float,
     deadline_slack_max: float,
+    deadline_ceiling_s: float,
 ) -> list[Task]:
     tasks = []
     for _ in range(n):
@@ -34,8 +35,11 @@ def sample_tasks(
         compute_gflop = float(rng.uniform(0.5, 10.0))
         min_uplink = data_mb * 8 / max_uplink_rate_mbps
         min_compute = compute_gflop / min_edge_compute_gflops
-        deadline_s = (min_uplink + min_compute) * rng.uniform(
-            deadline_slack_min, deadline_slack_max,
+        deadline_s = min(
+            (min_uplink + min_compute) * rng.uniform(
+                deadline_slack_min, deadline_slack_max,
+            ),
+            deadline_ceiling_s,
         )
         tasks.append(Task(
             source=source,

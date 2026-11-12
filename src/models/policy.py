@@ -18,14 +18,17 @@ class GATPPO(nn.Module):
         )
 
     def forward(self, obs):
-        nodes = torch.as_tensor(obs["nodes"], dtype=torch.float32)
-        adjacency = torch.as_tensor(obs["adjacency"], dtype=torch.float32)
-        edges = torch.as_tensor(obs["edges"], dtype=torch.float32)
-        task = torch.as_tensor(obs["task"], dtype=torch.float32)
-        targets = torch.as_tensor(obs["candidate_targets"], dtype=torch.long)
-        paths = torch.as_tensor(obs["candidate_paths"], dtype=torch.float32)
-        extras = torch.as_tensor(obs["candidate_features"], dtype=torch.float32)
-        global_features = torch.as_tensor(obs["global_features"], dtype=torch.float32)
+        device = next(self.parameters()).device
+        nodes = torch.as_tensor(obs["nodes"], dtype=torch.float32, device=device)
+        adjacency = torch.as_tensor(obs["adjacency"], dtype=torch.float32, device=device)
+        edges = torch.as_tensor(obs["edges"], dtype=torch.float32, device=device)
+        task = torch.as_tensor(obs["task"], dtype=torch.float32, device=device)
+        targets = torch.as_tensor(obs["candidate_targets"], dtype=torch.long, device=device)
+        paths = torch.as_tensor(obs["candidate_paths"], dtype=torch.float32, device=device)
+        extras = torch.as_tensor(obs["candidate_features"], dtype=torch.float32, device=device)
+        global_features = torch.as_tensor(
+            obs["global_features"], dtype=torch.float32, device=device,
+        )
         h = self.gat(nodes, adjacency, edges) if self.use_gat else self.flat_encoder(nodes)
         k = len(targets)
         source = h[obs["source"]].expand(k, -1)

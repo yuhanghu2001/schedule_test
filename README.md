@@ -23,6 +23,12 @@ results/
     └── config.json
 ```
 
+## 训练设备与线程
+
+RTX 50 系显卡需要支持 Blackwell 的 PyTorch 2.7 或更高版本。GPU 环境应安装 PyTorch 官方 CUDA 构建，并用 `python src/train.py --device cuda --threads 4` 启动。`--device auto` 会在 CUDA 可用时选择 GPU；训练配置快照会记录实际设备和 CPU 线程数。
+
+环境中的候选动作枚举、多跳路径和物理约束仍是顺序相关的 Python/NumPy 逻辑，保留在 CPU；GAT-PPO 前向和参数更新可运行在 GPU。当前图只有7个节点，GPU 不保证快于 CPU，因此正式训练前应使用相同配置比较设备吞吐。CPU 基准显示4线程快于原先固定的32线程，默认值已改为4。
+
 ## 文件概览
 
 ```text
