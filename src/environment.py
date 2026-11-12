@@ -340,7 +340,6 @@ class EdgeEnv:
     def step(self, action_id: int):
         task = self.tasks[self.idx]
         action = self.actions[action_id]
-        previous_variance = self._load_variance()
         accepted = action.destination != -2
         if accepted:
             allocation = self._group_allocation(
@@ -348,8 +347,6 @@ class EdgeEnv:
                 action.transport_delay, action.transport_energy,
             )
             group_outcomes, candidate_share, candidate_outcome = allocation
-            delay_increment = 0.0
-            energy_increment = 0.0
             for assignment, share, outcome in group_outcomes:
                 other_task = self.tasks[assignment.task_index]
                 previous_delay = assignment.action.delay
@@ -358,8 +355,6 @@ class EdgeEnv:
                 self.sum_delay += delay - previous_delay
                 self.sum_priority_delay += other_task.priority * (delay - previous_delay)
                 self.total_energy += energy - previous_energy
-                delay_increment += (delay - previous_delay) / other_task.deadline_s
-                energy_increment += energy - previous_energy
                 assignment.action.compute_share = share
                 assignment.action.delay = delay
                 assignment.action.energy = energy
@@ -396,12 +391,17 @@ class EdgeEnv:
                     self.slot_link_used[a, b] += task.data_mb
                     self.slot_link_used[b, a] += task.output_mb
             self.slot_assignments.append(Assignment(self.idx, action))
-            delay_increment += action.delay / task.deadline_s
-            energy_increment += action.energy
-            reward = (3.0 - .8 * delay_increment - .12 * energy_increment
-                      - .5 * (self._load_variance() - previous_variance))
-        else:
-            reward = -1. if len(self.actions) > 1 else -.05
+        processed_tasks = self.idx + 1
+        task_completion_rate = self.accepted / processed_tasks
+        average_completion_time = self.sum_delay / self.accepted if self.accepted else 0.0
+        average_task_energy = self.total_energy / self.accepted if self.accepted else 0.0
+        load_imbalance = (
+            self.total_load_variance + self._load_variance()
+        ) / (self.load_samples + 1)
+        reward = (2.0 * task_completion_rate
+                  - 2.0 * average_completion_time
+                  - 1.0 * average_task_energy
+                  - 1.0 * load_imbalance)
         self.total_reward += reward
         self.idx += 1
         done = self.idx == len(self.tasks)
