@@ -51,7 +51,16 @@ class EdgeEnv:
 
     def reset(self):
         c = self.cfg
-        self.tasks = sample_tasks(self.rng, c.n_tasks, c.n_terminals, c.n_edges)
+        self.tasks = sample_tasks(
+            self.rng,
+            c.n_tasks,
+            c.n_terminals,
+            c.n_edges,
+            max_uplink_rate_mbps=c.radio_rate_max_mbps,
+            min_edge_compute_gflops=float(self.speed[:self.cloud].min()),
+            deadline_slack_min=c.deadline_slack_min,
+            deadline_slack_max=c.deadline_slack_max,
+        )
         self.radio_rates = self.rng.uniform(c.radio_rate_min_mbps, c.radio_rate_max_mbps, c.n_terminals)
         self.radio_channel_gain = (
             2.0 ** (self.radio_rates / c.radio_bandwidth_mhz) - 1.0
@@ -318,7 +327,7 @@ class EdgeEnv:
             cand[a, 3:6] = [float(action.resource == q) for q in range(3)]
             edge_hops = max(0, len(route) - 1) if 0 <= action.destination < self.cloud else 0
             cand[a, 6] = edge_hops / self.cfg.max_hops
-            cand[a, 7] = action.delay / .5
+            cand[a, 7] = action.delay / self.cfg.reward_delay_ref
             cand[a, 8] = action.energy / 10
             if local:
                 cand[a, 9] = self.slot_local_queues[task.source] / self.local_queue_cap[task.source]
@@ -326,7 +335,7 @@ class EdgeEnv:
                 cand[a, 9] = self.slot_queues[targets[a]] / self.queue_cap[targets[a]]
         task_vector = np.array([
             task.data_mb / 8, task.output_mb, task.compute_gflop / 10,
-            task.deadline_s / .5, task.priority / 5,
+            task.deadline_s / self.cfg.reward_delay_ref, task.priority / 5,
             task.memory_gb / 2, task.kind / 4, float(task.allow_offload),
         ], dtype=np.float32)
         task_count = len(self.tasks)

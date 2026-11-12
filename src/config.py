@@ -23,6 +23,8 @@ class Config:
     cloud_rate_max_mbps: float = 200.0
     radio_rate_min_mbps: float = 60.0
     radio_rate_max_mbps: float = 180.0
+    deadline_slack_min: float = 1.2
+    deadline_slack_max: float = 2.5
     radio_bandwidth_mhz: float = 20.0
     uplink_max_power_w: float = 0.5
     uplink_circuit_power_w: float = 0.1
