@@ -50,9 +50,9 @@ class EnvironmentDynamicsTest(unittest.TestCase):
         metrics = env.metrics()
         expected_reward = (
             2.0 * metrics["task_success_rate"]
-            - 2.0 * metrics["avg_delay_s"]
-            - 1.0 * metrics["avg_energy_j"]
-            - 1.0 * metrics["mean_load_variance"]
+            - 2.0 * metrics["avg_delay_s"] / 0.5
+            - 1.0 * metrics["avg_energy_j"] / 3.0
+            - 1.0 * metrics["mean_load_variance"] / 0.05
         )
         self.assertAlmostEqual(reward, expected_reward)
 

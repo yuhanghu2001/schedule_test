@@ -62,7 +62,7 @@ def save_training_plot(records, output):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", default="configs/default.json")
-parser.add_argument("--episodes", type=int, default=1000,
+parser.add_argument("--episodes", type=int, default=500,
                     help="训练结束时的总 episode 数")
 parser.add_argument("--model", choices=("gat", "flat", "shuffled_gat"), default="gat")
 parser.add_argument("--seed", type=int, help="覆盖新训练运行的配置种子")
@@ -83,7 +83,7 @@ else:
     if args.seed is not None:
         cfg = replace(cfg, seed=args.seed)
     model_type = args.model
-torch.set_num_threads(1)
+torch.set_num_threads(32)
 torch.manual_seed(cfg.seed)
 np.random.seed(cfg.seed)
 

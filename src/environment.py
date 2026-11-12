@@ -398,10 +398,12 @@ class EdgeEnv:
         load_imbalance = (
             self.total_load_variance + self._load_variance()
         ) / (self.load_samples + 1)
+        # 四项指标量纲不同，先归一化到大致 [0,1] 再按 2:2:1:1 加权。
+        # 时延参考最大截止期 0.5s，能耗参考任务典型上限 3J，负载方差参考 0.05。
         reward = (2.0 * task_completion_rate
-                  - 2.0 * average_completion_time
-                  - 1.0 * average_task_energy
-                  - 1.0 * load_imbalance)
+                  - 2.0 * average_completion_time / 0.5
+                  - 1.0 * average_task_energy / 3.0
+                  - 1.0 * load_imbalance / 0.05)
         self.total_reward += reward
         self.idx += 1
         done = self.idx == len(self.tasks)
