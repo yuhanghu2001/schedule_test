@@ -2,47 +2,7 @@
 
 一个**可运行的研究原型**：20 个端侧节点、6 个区域边缘服务器、1 个云端服务器；动态稀疏边缘网络；5 类智能任务；CPU/NPU/FPGA 异构资源；GAT 提取拓扑/链路与邻域资源特征，PPO 联合选择任务执行节点、异构资源和多跳路径。
 
-核心思想：保留四目标（任务完成率、优先级加权完成时延、总能耗、负载不均衡）；采用接收/服务/算力/容量/时延/路径/共享带宽等条件产生可行候选调度动作。
-
-## 快速运行
-
-在 ZIP 解压后进入 `schedule_test` 目录：
-
-最简单的训练方式：
-
-```bash
-conda activate gatppo
-python src/train.py
-```
-
-默认使用 `configs/small_smoke.json` 训练 500 个 episode，并自动创建北京时间结果目录。终端每行先显示当前 `episode`，再显示 `累计奖励`、`任务完成率`、`任务平均完成时间`（秒）、`任务平均能耗`（J）和 `负载均衡度`。训练结束后，同一结果目录会生成 `training_metrics.png`；每项指标包含浅色真实值曲线和深色滑动窗口曲线，不绘制圆点和图例。无论当前终端位于仓库根目录还是 `src/`，配置和结果路径都以仓库根目录为基准。
-
-需要同时执行 smoke 和评估时：
-
-```bash
-conda activate gatppo
-python -m pip install -r requirements.txt
-# macOS / Linux
-run_dir="results/$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S)"
-mkdir "$run_dir"
-cp configs/small_smoke.json "$run_dir/config.json"
-python -m scripts.smoke --config configs/small_smoke.json --run-dir "$run_dir" | tee "$run_dir/smoke.log"
-python src/train.py --config configs/small_smoke.json --episodes 3 --run-dir "$run_dir" | tee "$run_dir/train.log"
-python -m scripts.evaluate --config configs/small_smoke.json --checkpoint "$run_dir/gat_ppo.pt" --run-dir "$run_dir" | tee "$run_dir/evaluate.log"
-```
-
-Windows PowerShell：
-
-```powershell
-conda activate gatppo
-$beijingNow = [System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId((Get-Date).ToUniversalTime(), 'China Standard Time')
-$runDir = "results/$($beijingNow.ToString('yyyyMMdd_HHmmss'))"
-New-Item -ItemType Directory -Path $runDir | Out-Null
-Copy-Item configs/small_smoke.json "$runDir/config.json"
-python -m scripts.smoke --config configs/small_smoke.json --run-dir $runDir | Tee-Object -FilePath "$runDir/smoke.log"
-python src/train.py --config configs/small_smoke.json --episodes 3 --run-dir $runDir | Tee-Object -FilePath "$runDir/train.log"
-python -m scripts.evaluate --config configs/small_smoke.json --checkpoint "$runDir/gat_ppo.pt" --run-dir $runDir | Tee-Object -FilePath "$runDir/evaluate.log"
-```
+核心思想：围绕任务完成率、平均完成时间、平均任务能耗和资源负载均衡度四个指标进行联合优化；采用接收、服务、算力、容量、时限、路径和共享带宽等约束生成可行调度动作。
 
 ## 结果目录规范
 
@@ -59,37 +19,6 @@ results/
     ├── evaluate.log
     └── config.json
 ```
-
-切换到主规模任务：
-
-```bash
-run_dir="results/$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S)"
-mkdir "$run_dir"
-cp configs/default.json "$run_dir/config.json"
-python src/train.py --config configs/default.json --episodes 100 --run-dir "$run_dir" | tee "$run_dir/train.log"
-```
-
-同一动作/奖励/环境下的**无GAT消融**（普通节点编码PPO）：
-
-```bash
-run_dir="results/$(TZ=Asia/Shanghai date +%Y%m%d_%H%M%S)"
-mkdir "$run_dir"
-cp configs/default.json "$run_dir/config.json"
-python src/train.py --config configs/default.json --episodes 100 --model flat --run-dir "$run_dir" --output flat_ppo.pt | tee "$run_dir/train.log"
-python -m scripts.evaluate --config configs/default.json --checkpoint "$run_dir/flat_ppo.pt" --run-dir "$run_dir" | tee "$run_dir/evaluate.log"
-```
-
-四种方法的多随机种子聚合实验（可用不同评估配置做跨拓扑或跨拥塞测试）：
-
-```bash
-python -m scripts.experiment \
-  --config configs/default.json \
-  --evaluation-config configs/high_congestion.json \
-  --episodes 100 \
-  --seeds 0 1 2 3 4 5 6 7 8 9
-```
-
-该入口比较 `gat`、`flat`、`shuffled_gat` 和 `heuristic`，并在本次结果目录的 `summary.json` 中保存均值、标准差和有效样本数。它提供可复现的实验流程，不代表仓库已经跑完论文规模实验或得到性能提升结论。
 
 ## 文件概览
 
@@ -142,4 +71,4 @@ Codex、Claude 等 AI 的每次完整工作记录保存在 `memory/`，目录名
 - **结果差异**：实验指标与训练奖励分开记录；固定权重奖励是四目标的训练代理，不声称是加权目标的严格等价实现。
 - **实验差异**：仓库提供四方法、多种子和跨场景运行入口；只有真实完成相同预算实验后才能报告均值、方差或性能提升。
 
-阅读次序：`AGENTS.md` → `docs/01_环境开发说明书.md` → `docs/02_数学模型与C1-C24约束.md` → 运行示例。
+阅读次序：`AGENTS.md` → `docs/01_环境开发说明书.md` → `docs/02_数学模型与C1-C24约束.md`。
