@@ -61,8 +61,8 @@ def save_training_plot(records, output):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", default="configs/small_smoke.json")
-parser.add_argument("--episodes", type=int, default=500,
+parser.add_argument("--config", default="configs/default.json")
+parser.add_argument("--episodes", type=int, default=1000,
                     help="训练结束时的总 episode 数")
 parser.add_argument("--model", choices=("gat", "flat", "shuffled_gat"), default="gat")
 parser.add_argument("--seed", type=int, help="覆盖新训练运行的配置种子")
