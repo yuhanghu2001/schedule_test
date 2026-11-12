@@ -6,7 +6,7 @@
 
 ## 结果目录规范
 
-每次运行 smoke、训练、评估或组合实验前，都必须按北京时间新建独立目录 `results/YYYYMMDD_HHMMSS/`。本次运行的 checkpoint、终端日志、评估指标、图表和配置快照统一保存在该目录中；不要把新产物直接写入 `results/` 根目录，也不要复用或覆盖历史目录。评估已有 checkpoint 时，在本次目录的日志中保留原 checkpoint 路径。
+`results/` 只保存正式训练及其配套正式评估/组合实验的产物。正式运行按北京时间新建 `results/YYYYMMDD_HHMMSS/`，统一保存 checkpoint、日志、指标、图表和配置快照。单元测试、smoke、少轮开发验证和临时诊断使用系统临时目录，完成后自动删除，不写入 `results/`。
 
 ```text
 results/
@@ -51,6 +51,7 @@ schedule_test/
 │   ├── baselines.py                  # 最短路径+最快资源启发式
 │   ├── environment.py                # 状态、合法动作、更新、统计
 │   ├── evaluation.py                 # 固定种子贪心评估与指标聚合
+│   ├── plotting.py                   # 训练/验证曲线和横轴格式
 │   ├── models/
 │   │   ├── gat.py                     # 两层边特征GAT
 │   │   └── policy.py                  # GAT-PPO Actor/Critic

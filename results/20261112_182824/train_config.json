@@ -4,9 +4,9 @@
     "evaluation_seed": 1042,
     "n_terminals": 20,
     "n_edges": 6,
-    "n_tasks": 36,
+    "n_tasks": 600,
     "tasks_per_slot": 12,
-    "topology_period_slots": 2,
+    "topology_period_slots": 20,
     "undirected_edge_links": 9,
     "max_hops": 4,
     "k_routes_per_destination": 2,
@@ -38,17 +38,17 @@
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "ppo_clip": 0.2,
-    "ppo_epochs": 2,
-    "ppo_batch_size": 16,
+    "ppo_epochs": 3,
+    "ppo_batch_size": 64,
     "vf_coef": 0.5,
     "ent_coef": 0.01,
     "max_grad_norm": 0.5,
     "eval_interval": 25,
     "evaluation_seed_count": 5
   },
-  "config_source": "/home/hyh/schedule_test/configs/small_smoke.json",
+  "config_source": "/home/hyh/schedule_test/configs/default.json",
   "model_type": "gat",
-  "episodes": 2,
+  "episodes": 500,
   "resume": null,
   "reward_version": "v2_additive",
   "observation_version": "v2_global9",
@@ -59,6 +59,6 @@
     1045,
     1046
   ],
-  "best_output": "/home/hyh/schedule_test/results/20261112_175928/best_gat_ppo.pt",
-  "last_output": "/home/hyh/schedule_test/results/20261112_175928/last_gat_ppo.pt"
+  "best_output": "/home/hyh/schedule_test/results/20261112_182824/best_gat_ppo.pt",
+  "last_output": "/home/hyh/schedule_test/results/20261112_182824/last_gat_ppo.pt"
 }
