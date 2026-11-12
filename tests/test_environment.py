@@ -22,7 +22,7 @@ class EnvironmentDynamicsTest(unittest.TestCase):
             index for index, action in enumerate(env.actions)
             if action.destination == -1 and action.resource == 0
         )
-        env.step(first_action)
+        _, first_reward, _, _ = env.step(first_action)
         previous_share = env.slot_assignments[0].action.compute_share
         previous_delay = env.slot_assignments[0].action.delay
 
@@ -30,7 +30,7 @@ class EnvironmentDynamicsTest(unittest.TestCase):
             index for index, action in enumerate(env.actions)
             if action.destination == -1 and action.resource == 0
         )
-        _, reward, _, _ = env.step(second_action)
+        _, second_reward, _, _ = env.step(second_action)
 
         first = env.slot_assignments[0].action
         self.assertLess(first.compute_share, previous_share)
@@ -48,13 +48,8 @@ class EnvironmentDynamicsTest(unittest.TestCase):
             env.metrics()["avg_energy_j"], env.total_energy / env.accepted,
         )
         metrics = env.metrics()
-        expected_reward = (
-            2.0 * metrics["task_success_rate"]
-            - 2.0 * metrics["avg_delay_s"] / 0.5
-            - 1.0 * metrics["avg_energy_j"] / 3.0
-            - 1.0 * metrics["mean_load_variance"] / 0.05
-        )
-        self.assertAlmostEqual(reward, expected_reward)
+        self.assertAlmostEqual(first_reward + second_reward, metrics["episode_reward"])
+        self.assertAlmostEqual(metrics["reward_sum_check"], metrics["objective_score"])
 
     def test_generated_actions_keep_core_constraints(self):
         env = EdgeEnv(load_config("configs/small_smoke.json"))

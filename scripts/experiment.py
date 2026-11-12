@@ -13,11 +13,16 @@ from src.config import load_config
 
 
 METRICS = (
+    "objective_score",
     "episode_reward",
     "task_success_rate",
     "avg_delay_s",
     "avg_energy_j",
+    "mean_load_variance",
     "load_balance_degree",
+    "feasible_task_rate",
+    "conditional_reject_rate",
+    "forced_reject_rate",
 )
 
 
@@ -78,7 +83,7 @@ for method in args.methods:
                 "--seed", str(seed),
                 "--run-dir", str(seed_dir),
             ], check=True)
-            checkpoint = seed_dir / f"{method}_ppo.pt"
+            checkpoint = seed_dir / f"last_{method}_ppo.pt"
             command = [
                 sys.executable, "-m", "scripts.evaluate",
                 "--checkpoint", str(checkpoint),

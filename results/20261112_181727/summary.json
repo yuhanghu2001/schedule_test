@@ -1,0 +1,106 @@
+{
+  "gat": {
+    "objective_score": {
+      "mean": 0.26849059905117667,
+      "std": 0.0,
+      "count": 1
+    },
+    "episode_reward": {
+      "mean": 9.665661565842354,
+      "std": 0.0,
+      "count": 1
+    },
+    "task_success_rate": {
+      "mean": 0.3611111111111111,
+      "std": 0.0,
+      "count": 1
+    },
+    "avg_delay_s": {
+      "mean": 0.2780373905258544,
+      "std": 0.0,
+      "count": 1
+    },
+    "avg_energy_j": {
+      "mean": 1.522298772518589,
+      "std": 0.0,
+      "count": 1
+    },
+    "mean_load_variance": {
+      "mean": 0.029555230711897213,
+      "std": 0.0,
+      "count": 1
+    },
+    "load_balance_degree": {
+      "mean": 0.9712932052305141,
+      "std": 0.0,
+      "count": 1
+    },
+    "feasible_task_rate": {
+      "mean": 0.3611111111111111,
+      "std": 0.0,
+      "count": 1
+    },
+    "conditional_reject_rate": {
+      "mean": 0.0,
+      "std": 0.0,
+      "count": 1
+    },
+    "forced_reject_rate": {
+      "mean": 0.6388888888888888,
+      "std": 0.0,
+      "count": 1
+    }
+  },
+  "heuristic": {
+    "objective_score": {
+      "mean": 0.30325760473154395,
+      "std": 0.0,
+      "count": 1
+    },
+    "episode_reward": {
+      "mean": 10.917273770335575,
+      "std": 0.0,
+      "count": 1
+    },
+    "task_success_rate": {
+      "mean": 0.3888888888888889,
+      "std": 0.0,
+      "count": 1
+    },
+    "avg_delay_s": {
+      "mean": 0.24657316319431086,
+      "std": 0.0,
+      "count": 1
+    },
+    "avg_energy_j": {
+      "mean": 1.3728513259029846,
+      "std": 0.0,
+      "count": 1
+    },
+    "mean_load_variance": {
+      "mean": 0.03453887440264225,
+      "std": 0.0,
+      "count": 1
+    },
+    "load_balance_degree": {
+      "mean": 0.966614232430284,
+      "std": 0.0,
+      "count": 1
+    },
+    "feasible_task_rate": {
+      "mean": 0.3888888888888889,
+      "std": 0.0,
+      "count": 1
+    },
+    "conditional_reject_rate": {
+      "mean": 0.0,
+      "std": 0.0,
+      "count": 1
+    },
+    "forced_reject_rate": {
+      "mean": 0.6111111111111112,
+      "std": 0.0,
+      "count": 1
+    }
+  }
+}

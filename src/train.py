@@ -21,6 +21,7 @@ from src.algorithms.ppo import PPOTrainer
 from src.ablation import model_environment
 from src.config import Config, load_config
 from src.environment import EdgeEnv
+from src.evaluation import evaluate_policy
 from src.models.policy import GATPPO
 
 
@@ -60,6 +61,55 @@ def save_training_plot(records, output):
     plt.close(figure)
 
 
+def save_evaluation_plot(records, output):
+    plt.rcParams["font.family"] = "Noto Sans CJK SC"
+    episodes = [record["episode"] for record in records]
+    series = (
+        ("objective_score", "验证目标分数", "分数", "#e41a1c"),
+        ("task_success_rate", "验证任务完成率", "完成率", "#ff9800"),
+        ("avg_delay_s", "验证平均完成时间", "秒", "#2e7d32"),
+        ("avg_energy_j", "验证平均任务能耗", "J", "#1565c0"),
+        ("mean_load_variance", "验证负载方差", "方差", "#7b1fa2"),
+    )
+    figure, axes = plt.subplots(3, 2, figsize=(12, 12), constrained_layout=True)
+    for axis, (field, title, unit, color) in zip(axes.flat, series):
+        means = np.asarray([record[f"{field}_mean"] for record in records], dtype=float)
+        stds = np.asarray([record[f"{field}_std"] for record in records], dtype=float)
+        axis.plot(episodes, means, color=color, linewidth=2.0)
+        axis.fill_between(episodes, means - stds, means + stds, color=color, alpha=0.18)
+        axis.set_title(title)
+        axis.set_xlabel("训练回合")
+        axis.set_ylabel(unit)
+        axis.grid(alpha=0.25)
+    axes.flat[-1].axis("off")
+    figure.savefig(output, dpi=160)
+    plt.close(figure)
+
+
+def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_score):
+    numpy_state = np.random.get_state()
+    checkpoint = {
+        "model_type": model_type,
+        "config": asdict(cfg),
+        "reward_version": cfg.reward_version,
+        "observation_version": cfg.observation_version,
+        "model": model.state_dict(),
+        "optimizer": trainer.optimizer.state_dict(),
+        "episode": episode,
+        "best_evaluation_score": best_score,
+        "torch_rng_state": torch.get_rng_state(),
+        "numpy_rng_state": {
+            "name": numpy_state[0],
+            "keys": torch.from_numpy(numpy_state[1]),
+            "position": numpy_state[2],
+            "has_gauss": numpy_state[3],
+            "cached_gaussian": numpy_state[4],
+        },
+        "env_rng_state": env.rng.bit_generator.state,
+    }
+    torch.save(checkpoint, path)
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", default="configs/default.json")
 parser.add_argument("--episodes", type=int, default=500,
@@ -67,7 +117,7 @@ parser.add_argument("--episodes", type=int, default=500,
 parser.add_argument("--model", choices=("gat", "flat", "shuffled_gat"), default="gat")
 parser.add_argument("--seed", type=int, help="覆盖新训练运行的配置种子")
 parser.add_argument("--run-dir", help="配置和训练指标目录；默认创建北京时间结果目录")
-parser.add_argument("--output", help="run-dir 内的 checkpoint 文件名")
+parser.add_argument("--output", help="run-dir 内 last checkpoint 的文件名")
 parser.add_argument("--resume", help="从 checkpoint 的模型、优化器和 episode 继续训练")
 args = parser.parse_args()
 
@@ -89,13 +139,15 @@ np.random.seed(cfg.seed)
 
 run_dir = repository_path(args.run_dir) if args.run_dir else new_run_dir()
 run_dir.mkdir(parents=True, exist_ok=bool(args.run_dir))
-output_name = Path(args.output).name if args.output else f"{model_type}_ppo.pt"
-output = run_dir / output_name
+last_name = Path(args.output).name if args.output else f"last_{model_type}_ppo.pt"
+last_output = run_dir / last_name
+best_output = run_dir / f"best_{model_type}_ppo.pt"
 
 model = GATPPO(use_gat=model_type != "flat")
 trainer = PPOTrainer(model, cfg)
 env = model_environment(EdgeEnv(cfg), model_type, cfg.seed)
 start_episode = 0
+best_score = -np.inf
 if resume_checkpoint:
     model.load_state_dict(resume_checkpoint["model"])
     trainer.optimizer.load_state_dict(resume_checkpoint["optimizer"])
@@ -113,22 +165,33 @@ run_config = {
     "model_type": model_type,
     "episodes": args.episodes,
     "resume": str(resume_path) if resume_path else None,
-    "output": str(output),
+    "reward_version": cfg.reward_version,
+    "observation_version": cfg.observation_version,
+    "validation_seeds": [
+        cfg.evaluation_seed + offset for offset in range(cfg.evaluation_seed_count)
+    ],
+    "best_output": str(best_output),
+    "last_output": str(last_output),
 }
 with open(run_dir / "train_config.json", "x", encoding="utf-8") as file:
     json.dump(run_config, file, ensure_ascii=False, indent=2)
 
 last_episode = start_episode
 plot_records = []
-with open(run_dir / "train_metrics.jsonl", "x", encoding="utf-8") as metrics_file:
+evaluation_records = []
+validation_seeds = [
+    cfg.evaluation_seed + offset for offset in range(cfg.evaluation_seed_count)
+]
+with (open(run_dir / "train_metrics.jsonl", "x", encoding="utf-8") as metrics_file,
+      open(run_dir / "evaluation_metrics.jsonl", "x", encoding="utf-8") as evaluation_file):
     for episode_index in range(start_episode, args.episodes):
         rollout, metrics = trainer.collect_episode(env)
-        loss = trainer.update(rollout)
+        update_metrics = trainer.update(rollout)
         last_episode = episode_index + 1
         record = {
             "episode": last_episode,
             "seed": cfg.seed,
-            "loss": round(loss, 4),
+            **update_metrics,
             **metrics,
         }
         plot_records.append(record)
@@ -141,25 +204,24 @@ with open(run_dir / "train_metrics.jsonl", "x", encoding="utf-8") as metrics_fil
             "任务平均能耗": metrics["avg_energy_j"],
             "负载均衡度": metrics["load_balance_degree"],
         }, ensure_ascii=False))
+        if last_episode % cfg.eval_interval == 0 or last_episode == args.episodes:
+            evaluation = {
+                "episode": last_episode,
+                **evaluate_policy(model, cfg, validation_seeds, model_type),
+            }
+            evaluation_records.append(evaluation)
+            evaluation_file.write(json.dumps(evaluation, ensure_ascii=False) + "\n")
+            evaluation_score = evaluation["objective_score_mean"]
+            if evaluation_score > best_score:
+                best_score = evaluation_score
+                save_checkpoint(
+                    best_output, model, trainer, env, cfg,
+                    model_type, last_episode, best_score,
+                )
 
 save_training_plot(plot_records, run_dir / "training_metrics.png")
-
-numpy_state = np.random.get_state()
-checkpoint = {
-    "model_type": model_type,
-    "config": asdict(cfg),
-    "model": model.state_dict(),
-    "optimizer": trainer.optimizer.state_dict(),
-    "episode": last_episode,
-    "torch_rng_state": torch.get_rng_state(),
-    "numpy_rng_state": {
-        "name": numpy_state[0],
-        "keys": torch.from_numpy(numpy_state[1]),
-        "position": numpy_state[2],
-        "has_gauss": numpy_state[3],
-        "cached_gaussian": numpy_state[4],
-    },
-    "env_rng_state": env.rng.bit_generator.state,
-}
-with open(output, "xb") as file:
-    torch.save(checkpoint, file)
+save_evaluation_plot(evaluation_records, run_dir / "evaluation_metrics.png")
+save_checkpoint(
+    last_output, model, trainer, env, cfg,
+    model_type, last_episode, best_score,
+)

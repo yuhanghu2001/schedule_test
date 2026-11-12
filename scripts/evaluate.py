@@ -9,9 +9,8 @@ import numpy as np
 import torch
 
 from src.config import load_config
-from src.ablation import model_environment
 from src.config import Config
-from src.environment import EdgeEnv
+from src.evaluation import evaluate_episode
 from src.models.policy import GATPPO
 
 
@@ -40,22 +39,18 @@ np.random.seed(evaluation_seed)
 run_dir = Path(args.run_dir) if args.run_dir else new_run_dir()
 run_dir.mkdir(parents=True, exist_ok=bool(args.run_dir))
 
-env = model_environment(EdgeEnv(eval_cfg), model_type, evaluation_seed)
 model = GATPPO(use_gat=model_type != "flat")
 model.load_state_dict(checkpoint["model"])
 model.eval()
-obs = env.reset()
-done = False
-while not done:
-    action, _, _ = model.act(obs, greedy=True)
-    obs, _, done, _ = env.step(action)
 
 evaluation = {
     "checkpoint_source": args.checkpoint,
     "checkpoint_episode": checkpoint["episode"],
     "model_type": model_type,
+    "reward_version": checkpoint["reward_version"],
+    "observation_version": checkpoint["observation_version"],
     "evaluation_seed": evaluation_seed,
-    **env.metrics(),
+    **evaluate_episode(model, eval_cfg, evaluation_seed, model_type),
 }
 with open(run_dir / "evaluation_config.json", "x", encoding="utf-8") as file:
     json.dump({"evaluation_config": asdict(cfg),

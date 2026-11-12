@@ -78,6 +78,13 @@ class EdgeEnv:
         self.total_hops = 0
         self.total_load_variance = 0.
         self.load_samples = 0
+        self.feasible_tasks = 0
+        self.conditional_rejects = 0
+        self.forced_rejects = 0
+        self.action_count_sum = 0
+        self.local_executions = 0
+        self.edge_executions = 0
+        self.cloud_executions = 0
         return self.observe()
 
     def _new_topology(self):
@@ -322,6 +329,19 @@ class EdgeEnv:
             task.deadline_s / .5, task.priority / 5,
             task.memory_gb / 2, task.kind / 4, float(task.allow_offload),
         ], dtype=np.float32)
+        task_count = len(self.tasks)
+        slot_count = (task_count + self.cfg.tasks_per_slot - 1) // self.cfg.tasks_per_slot
+        global_features = np.array([
+            self.idx / task_count,
+            self.accepted / task_count,
+            self.accepted / max(1, self.idx),
+            self.sum_delay / (task_count * self.cfg.reward_delay_ref),
+            self.total_energy / (task_count * self.cfg.reward_energy_ref),
+            self.total_load_variance / (slot_count * self.cfg.reward_variance_ref),
+            self._load_variance() / self.cfg.reward_variance_ref,
+            self.slot / slot_count,
+            (self.idx % self.cfg.tasks_per_slot) / self.cfg.tasks_per_slot,
+        ], dtype=np.float32)
         gat_adj = self.adj.copy()
         # 云端用于执行和广域链路，不作为边缘间图消息传递的超级中继。
         gat_adj[:self.cloud, self.cloud] = 0
@@ -335,12 +355,24 @@ class EdgeEnv:
             "candidate_features": cand,
             "candidate_targets": targets,
             "candidate_paths": paths,
+            "global_features": global_features,
         }
 
     def step(self, action_id: int):
         task = self.tasks[self.idx]
         action = self.actions[action_id]
+        before_delay = self.sum_delay
+        before_energy = self.total_energy
+        before_variance = self._load_variance()
+        feasible_count = len(self.actions) - 1
         accepted = action.destination != -2
+        self.action_count_sum += len(self.actions)
+        if feasible_count:
+            self.feasible_tasks += 1
+            if not accepted:
+                self.conditional_rejects += 1
+        elif not accepted:
+            self.forced_rejects += 1
         if accepted:
             allocation = self._group_allocation(
                 task, action.destination, action.resource,
@@ -391,19 +423,27 @@ class EdgeEnv:
                     self.slot_link_used[a, b] += task.data_mb
                     self.slot_link_used[b, a] += task.output_mb
             self.slot_assignments.append(Assignment(self.idx, action))
-        processed_tasks = self.idx + 1
-        task_completion_rate = self.accepted / processed_tasks
-        average_completion_time = self.sum_delay / self.accepted if self.accepted else 0.0
-        average_task_energy = self.total_energy / self.accepted if self.accepted else 0.0
-        load_imbalance = (
-            self.total_load_variance + self._load_variance()
-        ) / (self.load_samples + 1)
-        # 四项指标量纲不同，先归一化到大致 [0,1] 再按 2:2:1:1 加权。
-        # 时延参考最大截止期 0.5s，能耗参考任务典型上限 3J，负载方差参考 0.05。
-        reward = (2.0 * task_completion_rate
-                  - 2.0 * average_completion_time / 0.5
-                  - 1.0 * average_task_energy / 3.0
-                  - 1.0 * load_imbalance / 0.05)
+            if action.destination == -1:
+                self.local_executions += 1
+            elif action.destination == self.cloud:
+                self.cloud_executions += 1
+            else:
+                self.edge_executions += 1
+        delta_delay = self.sum_delay - before_delay
+        delta_energy = self.total_energy - before_energy
+        delta_variance = self._load_variance() - before_variance
+        task_count = len(self.tasks)
+        slot_count = (task_count + self.cfg.tasks_per_slot - 1) // self.cfg.tasks_per_slot
+        tasks_per_counted_slot = task_count / slot_count
+        reward_accept_part = self.cfg.reward_accept * float(accepted)
+        reward_delay_part = -self.cfg.reward_delay * delta_delay / self.cfg.reward_delay_ref
+        reward_energy_part = -self.cfg.reward_energy * delta_energy / self.cfg.reward_energy_ref
+        reward_balance_part = (
+            -self.cfg.reward_balance * tasks_per_counted_slot
+            * delta_variance / self.cfg.reward_variance_ref
+        )
+        reward = (reward_accept_part + reward_delay_part
+                  + reward_energy_part + reward_balance_part)
         self.total_reward += reward
         self.idx += 1
         done = self.idx == len(self.tasks)
@@ -434,7 +474,12 @@ class EdgeEnv:
                                           "resource": action.resource, "path": action.path,
                                           "delay": action.delay, "energy": action.energy,
                                           "f": action.compute_share,
-                                          "p_up": action.uplink_power}
+                                          "p_up": action.uplink_power,
+                                          "feasible_count": feasible_count,
+                                          "reward_accept_part": reward_accept_part,
+                                          "reward_delay_part": reward_delay_part,
+                                          "reward_energy_part": reward_energy_part,
+                                          "reward_balance_part": reward_balance_part}
 
     def metrics(self):
         count = len(self.tasks)
@@ -443,6 +488,14 @@ class EdgeEnv:
         avg_energy = self.total_energy / self.accepted if self.accepted else None
         mean_hops = self.total_hops / self.accepted if self.accepted else None
         load_variance = self.total_load_variance / self.load_samples
+        slot_count = (count + self.cfg.tasks_per_slot - 1) // self.cfg.tasks_per_slot
+        objective_score = (
+            self.cfg.reward_accept * self.accepted / count
+            - self.cfg.reward_delay * self.sum_delay / (count * self.cfg.reward_delay_ref)
+            - self.cfg.reward_energy * self.total_energy / (count * self.cfg.reward_energy_ref)
+            - self.cfg.reward_balance * self.total_load_variance
+            / (slot_count * self.cfg.reward_variance_ref)
+        )
         return {
             "tasks": count,
             "task_success_rate": self.accepted / count,
@@ -454,4 +507,17 @@ class EdgeEnv:
             "load_balance_degree": 1.0 / (1.0 + load_variance),
             "mean_hops_accepted": mean_hops,
             "episode_reward": self.total_reward,
+            "objective_score": objective_score,
+            "reward_sum_check": self.total_reward / count,
+            "feasible_task_rate": self.feasible_tasks / count,
+            "conditional_reject_rate": (
+                self.conditional_rejects / self.feasible_tasks
+                if self.feasible_tasks else 0.0
+            ),
+            "forced_reject_rate": self.forced_rejects / count,
+            "mean_action_count": self.action_count_sum / count,
+            "local_execution_rate": self.local_executions / count,
+            "edge_execution_rate": self.edge_executions / count,
+            "cloud_execution_rate": self.cloud_executions / count,
+            "mean_selected_hops": mean_hops,
         }

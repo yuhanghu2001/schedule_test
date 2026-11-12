@@ -11,10 +11,13 @@
 ```text
 results/
 └── 20261111_223015/
-    ├── gat_ppo.pt
+    ├── best_gat_ppo.pt
+    ├── last_gat_ppo.pt
     ├── train.log
     ├── train_metrics.jsonl
     ├── training_metrics.png
+    ├── evaluation_metrics.jsonl
+    ├── evaluation_metrics.png
     ├── metrics.json
     ├── evaluate.log
     └── config.json
@@ -35,7 +38,8 @@ schedule_test/
 │   ├── 01_环境开发说明书.md             # 从建模到代码与交付验收
 │   ├── 02_数学模型与C1-C24约束.md       # 24条约束的统一正确表达
 │   ├── 03_实验设计与指标.md             # 场景、消融、泛化、实验协议
-│   └── 04_数据字典与实现边界.md         # 关键变量、原型简化项
+│   ├── 04_数据字典与实现边界.md         # 关键变量、原型简化项
+│   └── 05_训练奖励与PPO对齐说明.md      # 可加奖励、全局状态与固定评估
 ├── memory/                           # AI 对话与工作记录
 ├── src/
 │   ├── train.py                      # 完整训练、续训、日志和绘图入口
@@ -46,6 +50,7 @@ schedule_test/
 │   ├── ablation.py                   # 打乱图结构消融环境
 │   ├── baselines.py                  # 最短路径+最快资源启发式
 │   ├── environment.py                # 状态、合法动作、更新、统计
+│   ├── evaluation.py                 # 固定种子贪心评估与指标聚合
 │   ├── models/
 │   │   ├── gat.py                     # 两层边特征GAT
 │   │   └── policy.py                  # GAT-PPO Actor/Critic
@@ -68,7 +73,7 @@ Codex、Claude 等 AI 的每次完整工作记录保存在 `memory/`，目录名
 - **已实现**：动态稀疏拓扑、DFS有效简单路径、正反向共享链路容量、异构资源匹配、时限过滤、逐任务奖励、shuffled mini-batch PPO、完整状态续训与独立种子评估。
 - **连续子问题**：固定离散执行节点、异构资源和路径后，上行功率通过 Dinkelbach 法求解 Shannon 能效分式子问题；同节点同资源并发任务通过带截止时间最低算力约束的 KKT active-set 分配。两者只保证各自连续子问题最优，**不表示整个四目标混合离散–连续问题达到全局最优。**
 - **模型差异**：数学文档给出完整 C1–C24 正式约束体系；代码采用“生成可行简单路径/动作”的实现方式隐式满足路由流守恒和无环条件，而非调用 MILP 求解器求完整原问题。
-- **结果差异**：训练 reward 按 `2:2:1:1` 使用完成率、平均完成时间、平均任务能耗和负载不均衡度的运行值；实验仍分别记录四项完整 episode 指标。
+- **结果差异**：训练 reward 使用 `4:2:1:1` 的可加增量形式，未折扣时满足 `episode_reward/N=objective_score`；实验仍分别记录四项完整 episode 指标。
 - **实验差异**：仓库提供四方法、多种子和跨场景运行入口；只有真实完成相同预算实验后才能报告均值、方差或性能提升。
 
 阅读次序：`AGENTS.md` → `docs/01_环境开发说明书.md` → `docs/02_数学模型与C1-C24约束.md`。

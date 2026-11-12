@@ -29,12 +29,26 @@ class Config:
     dinkelbach_tolerance: float = 1e-8
     dinkelbach_max_iterations: int = 50
     compute_priority_exponent: float = 1.0
+    reward_accept: float = 4.0
+    reward_delay: float = 2.0
+    reward_energy: float = 1.0
+    reward_balance: float = 1.0
+    reward_delay_ref: float = 0.5
+    reward_energy_ref: float = 3.0
+    reward_variance_ref: float = 0.05
+    reward_version: str = "v2_additive"
+    observation_version: str = "v2_global9"
     learning_rate: float = 3e-4
     gamma: float = 0.99
     gae_lambda: float = 0.95
     ppo_clip: float = 0.2
     ppo_epochs: int = 3
     ppo_batch_size: int = 64
+    vf_coef: float = 0.5
+    ent_coef: float = 0.01
+    max_grad_norm: float = 0.5
+    eval_interval: int = 25
+    evaluation_seed_count: int = 5
 
 
 def load_config(path: str) -> Config:

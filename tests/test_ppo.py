@@ -29,8 +29,8 @@ class PPOTrainingTest(unittest.TestCase):
             current = distribution.log_prob(torch.tensor(action)).item()
             self.assertAlmostEqual(current, old_logprob, places=6)
         before = [parameter.detach().clone() for parameter in model.parameters()]
-        loss = trainer.update(episode)
-        self.assertTrue(np.isfinite(loss))
+        update_metrics = trainer.update(episode)
+        self.assertTrue(np.isfinite(update_metrics["loss"]))
         self.assertTrue(any(
             not torch.equal(previous, current)
             for previous, current in zip(before, model.parameters())
