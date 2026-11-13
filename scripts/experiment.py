@@ -42,7 +42,7 @@ parser.add_argument(
     default=("gat", "flat", "shuffled_gat", "heuristic"),
 )
 parser.add_argument("--run-dir", help="组合实验目录；默认创建北京时间结果目录")
-parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
 parser.add_argument("--threads", type=int, default=4)
 args = parser.parse_args()
 

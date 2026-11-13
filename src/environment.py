@@ -36,8 +36,8 @@ class EdgeEnv:
         self.rng = np.random.default_rng(cfg.seed)
         self.cloud = cfg.n_edges
         self.n_graph_nodes = cfg.n_edges + 1
-        self.speed = np.tile(np.array(cfg.edge_speed, dtype=np.float32), (cfg.n_edges, 1))
-        self.speed = np.vstack((self.speed, cfg.cloud_speed)).astype(np.float32)
+        self.speed = np.vstack((cfg.edge_speed_matrix, cfg.cloud_speed)).astype(np.float32)
+        self.service_deployment = np.array(cfg.service_deployment, dtype=bool)
         self.mem_cap = np.array([32.] * cfg.n_edges + [128.], dtype=np.float32)
         self.storage_cap = np.array([1000.] * cfg.n_edges + [4000.], dtype=np.float32)
         self.queue_cap = np.array([60.] * cfg.n_edges + [80.], dtype=np.float32)
@@ -268,6 +268,8 @@ class EdgeEnv:
         if task.allow_offload:
             source = task.access_edge
             for destination in range(self.cfg.n_edges):
+                if not self.service_deployment[destination, task.kind]:
+                    continue
                 # 同一接入边缘服务器不需要边缘间多跳。
                 routes = [(source,)] if destination == source else simple_routes(
                     self.adj, source, destination, self.cfg.max_hops)
@@ -275,9 +277,6 @@ class EdgeEnv:
                     8 * task.data_mb / (self.rates[a, b] * (1 - self.background[a, b]))
                     for a, b in zip(p, p[1:])))
                 for path in routes[:self.cfg.k_routes_per_destination]:
-                    # 部分边缘节点未部署该类服务，用于模拟服务可用约束。
-                    if (destination + task.kind) % 7 == 0:
-                        continue
                     for q in range(3):
                         if self.support[q, task.kind]:
                             action = self._candidate(task, destination, q, path)

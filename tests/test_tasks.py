@@ -8,9 +8,9 @@ from src.tasks import sample_tasks
 class TaskSamplingTest(unittest.TestCase):
     def test_deadline_scales_with_reference_processing_time(self):
         radio_rates = np.linspace(60.0, 180.0, 20)
-        min_edge_compute = 200.0
-        slack_min = 1.2
-        slack_max = 2.5
+        min_edge_compute = 150.0
+        slack_min = 1.8
+        slack_max = 3.0
         tasks = sample_tasks(
             np.random.default_rng(42),
             100,

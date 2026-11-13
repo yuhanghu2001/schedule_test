@@ -67,8 +67,8 @@ parser.add_argument("--seed", type=int, help="覆盖新训练运行的配置种�
 parser.add_argument("--run-dir", help="配置和训练指标目录；默认创建北京时间结果目录")
 parser.add_argument("--output", help="run-dir 内 last checkpoint 的文件名")
 parser.add_argument("--resume", help="从 checkpoint 的模型、优化器和 episode 继续训练")
-parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto",
-                    help="模型训练设备；auto 在 CUDA 可用时选择 GPU")
+parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu",
+                    help="模型训练设备；小图逐任务训练默认使用实测更快的 CPU")
 parser.add_argument("--threads", type=int, default=4,
                     help="PyTorch CPU 线程数；小图模型默认 4 线程")
 args = parser.parse_args()
@@ -137,6 +137,7 @@ run_config = {
 }
 with open(run_dir / "train_config.json", "x", encoding="utf-8") as file:
     json.dump(run_config, file, ensure_ascii=False, indent=2)
+print(json.dumps({"训练设备": str(device), "CPU线程数": args.threads}, ensure_ascii=False))
 
 last_episode = start_episode
 plot_records = []

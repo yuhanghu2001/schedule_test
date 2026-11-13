@@ -24,7 +24,7 @@ parser.add_argument("--config", help="评估场景配置；默认使用 checkpoi
 parser.add_argument("--checkpoint", required=True)
 parser.add_argument("--seed", type=int, help="覆盖评估种子")
 parser.add_argument("--run-dir", help="评估配置和指标目录；默认创建北京时间结果目录")
-parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
 parser.add_argument("--threads", type=int, default=4)
 args = parser.parse_args()
 
@@ -64,7 +64,8 @@ evaluation = {
 with open(run_dir / "evaluation_config.json", "x", encoding="utf-8") as file:
     json.dump({"evaluation_config": asdict(cfg),
                "config_source": args.config or args.checkpoint,
-               "training_config": checkpoint["config"], "model_type": model_type},
+               "training_config": checkpoint["config"], "model_type": model_type,
+               "device": str(device), "torch_threads": args.threads},
               file, ensure_ascii=False, indent=2)
 with open(run_dir / "metrics.json", "x", encoding="utf-8") as file:
     json.dump(evaluation, file, ensure_ascii=False, indent=2)

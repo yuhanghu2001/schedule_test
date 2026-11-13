@@ -25,9 +25,9 @@ results/
 
 ## 训练设备与线程
 
-RTX 50 系显卡需要支持 Blackwell 的 PyTorch 2.7 或更高版本。GPU 环境应安装 PyTorch 官方 CUDA 构建，并用 `python src/train.py --device cuda --threads 4` 启动。`--device auto` 会在 CUDA 可用时选择 GPU；训练配置快照会记录实际设备和 CPU 线程数。
+RTX 50 系显卡需要支持 Blackwell 的 PyTorch 2.7 或更高版本。本机已按 `environment-gpu.yml` 创建独立的 `gatppo-gpu` 环境；GPU 对照可用 `conda run -n gatppo-gpu python src/train.py --device cuda --threads 4` 启动。`--device auto` 会在 CUDA 可用时选择 GPU，训练配置快照会记录实际设备和 CPU 线程数。
 
-环境中的候选动作枚举、多跳路径和物理约束仍是顺序相关的 Python/NumPy 逻辑，保留在 CPU；GAT-PPO 前向和参数更新可运行在 GPU。当前图只有7个节点，GPU 不保证快于 CPU，因此正式训练前应使用相同配置比较设备吞吐。CPU 基准显示4线程快于原先固定的32线程，默认值已改为4。
+环境中的候选动作枚举、多跳路径和物理约束仍是顺序相关的 Python/NumPy 逻辑，保留在 CPU；GAT-PPO 前向和参数更新可运行在 GPU。当前图只有7个节点，同一份240任务、1次PPO epoch的预热后基准中，CPU 4线程为0.702秒，CPU 32线程为2.354秒，RTX 5060为2.287秒，因此默认设备为CPU、默认线程数为4。GPU 主要用于后续“多环境并行 + 批量前向”版本，当前串行版本可用 `--device cuda` 做设备对照，但不建议用它跑正式500轮训练。
 
 ## 文件概览
 
@@ -36,6 +36,7 @@ schedule_test/
 ├── AGENTS.md                         # 严格代码规范：简单、无防御式编程
 ├── README.md
 ├── requirements.txt
+├── environment-gpu.yml               # RTX 50 系独立 GPU 环境
 ├── configs/
 │   ├── default.json                  # 研究默认参数
 │   ├── small_smoke.json              # 轻量快速运行

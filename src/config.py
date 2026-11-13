@@ -23,11 +23,26 @@ class Config:
     cloud_rate_max_mbps: float = 200.0
     radio_rate_min_mbps: float = 60.0
     radio_rate_max_mbps: float = 180.0
-    edge_speed: tuple[float, float, float] = (200.0, 350.0, 200.0)
+    service_deployment: tuple[tuple[int, ...], ...] = (
+        (1, 1, 1, 0, 0),
+        (0, 0, 1, 1, 1),
+        (1, 0, 0, 1, 0),
+        (1, 1, 1, 0, 0),
+        (0, 0, 1, 1, 1),
+        (0, 1, 0, 0, 1),
+    )
+    edge_speed_matrix: tuple[tuple[float, float, float], ...] = (
+        (150.0, 500.0, 150.0),
+        (150.0, 150.0, 500.0),
+        (400.0, 200.0, 200.0),
+        (150.0, 500.0, 150.0),
+        (150.0, 150.0, 500.0),
+        (400.0, 200.0, 200.0),
+    )
     cloud_speed: tuple[float, float, float] = (8000.0, 12000.0, 8000.0)
     local_speed: tuple[float, float, float] = (12.0, 16.0, 6.0)
-    deadline_slack_min: float = 1.2
-    deadline_slack_max: float = 2.5
+    deadline_slack_min: float = 1.8
+    deadline_slack_max: float = 3.0
     radio_bandwidth_mhz: float = 20.0
     uplink_max_power_w: float = 0.5
     uplink_circuit_power_w: float = 0.1

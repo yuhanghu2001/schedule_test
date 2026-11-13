@@ -9,6 +9,28 @@ from src.tasks import Task
 
 
 class EnvironmentDynamicsTest(unittest.TestCase):
+    def test_service_deployment_forces_remote_edge_candidates(self):
+        cfg = replace(load_config("configs/small_smoke.json"), n_tasks=1)
+        env = EdgeEnv(cfg)
+        env.tasks = [
+            Task(0, 0, 3, 1.0, 0.1, 1.0, 10.0, 0.5, 0.5, 1, True),
+        ]
+        env.idx = 0
+        env.observe()
+
+        edge_actions = [
+            action for action in env.actions
+            if 0 <= action.destination < env.cloud
+        ]
+        self.assertTrue(edge_actions)
+        self.assertTrue(all(action.destination != 0 for action in edge_actions))
+        self.assertTrue(all(
+            env.service_deployment[action.destination, 3]
+            for action in edge_actions
+        ))
+        self.assertTrue(all(len(action.path) > 1 for action in edge_actions))
+        self.assertTrue(any(action.destination == env.cloud for action in env.actions))
+
     def test_kkt_reallocation_updates_previous_task(self):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=2, tasks_per_slot=2)
         env = EdgeEnv(cfg)
@@ -53,6 +75,9 @@ class EnvironmentDynamicsTest(unittest.TestCase):
 
     def test_generated_actions_keep_core_constraints(self):
         env = EdgeEnv(load_config("configs/small_smoke.json"))
+        np.testing.assert_array_equal(
+            env.speed[:env.cloud], np.array(env.cfg.edge_speed_matrix),
+        )
         env.reset()
         done = False
         while not done:
@@ -64,6 +89,10 @@ class EnvironmentDynamicsTest(unittest.TestCase):
                     self.assertEqual(action.path, ())
                 else:
                     self.assertLessEqual(action.uplink_power, env.cfg.uplink_max_power_w)
+                    if action.destination < env.cloud:
+                        self.assertTrue(
+                            env.service_deployment[action.destination, task.kind]
+                        )
                     for source, target in zip(action.path, action.path[1:]):
                         self.assertTrue(env.adj[source, target])
             action_id = max(
