@@ -63,6 +63,7 @@ class EdgeEnv:
             min_edge_compute_gflops=float(self.speed[:self.cloud].min()),
             deadline_slack_min=c.deadline_slack_min,
             deadline_slack_max=c.deadline_slack_max,
+            must_offload_rate=c.must_offload_rate,
         )
         self.radio_channel_gain = (
             2.0 ** (self.radio_rates / c.radio_bandwidth_mhz) - 1.0
@@ -87,6 +88,7 @@ class EdgeEnv:
         self.total_energy = 0.
         self.total_reward = 0.
         self.total_hops = 0
+        self.total_selected_hops = 0
         self.total_load_variance = 0.
         self.load_samples = 0
         self.feasible_tasks = 0
@@ -260,11 +262,12 @@ class EdgeEnv:
     def _make_candidates(self):
         task = self.tasks[self.idx]
         actions = []
-        for q in range(3):
-            if self._local_support(task, q):
-                action = self._candidate(task, -1, q, ())
-                if action is not None:
-                    actions.append(action)
+        if not task.must_offload:
+            for q in range(3):
+                if self._local_support(task, q):
+                    action = self._candidate(task, -1, q, ())
+                    if action is not None:
+                        actions.append(action)
         if task.allow_offload:
             source = task.access_edge
             for destination in range(self.cfg.n_edges):
@@ -411,6 +414,8 @@ class EdgeEnv:
             self.total_energy += action.energy
             if 0 <= action.destination < self.cloud:
                 self.total_hops += max(0, len(action.path) - 1)
+            if action.destination != -1:
+                self.total_selected_hops += len(action.path)
             if action.destination == -1:
                 source = task.source
                 self.slot_local_resource_used[source, action.resource] = sum(
@@ -497,6 +502,9 @@ class EdgeEnv:
         priority_delay = self.sum_priority_delay / self.sum_priority if self.accepted else None
         avg_energy = self.total_energy / self.accepted if self.accepted else None
         mean_hops = self.total_hops / self.accepted if self.accepted else None
+        mean_selected_hops = (
+            self.total_selected_hops / self.accepted if self.accepted else None
+        )
         load_variance = self.total_load_variance / self.load_samples
         slot_count = (count + self.cfg.tasks_per_slot - 1) // self.cfg.tasks_per_slot
         objective_score = (
@@ -529,5 +537,5 @@ class EdgeEnv:
             "local_execution_rate": self.local_executions / count,
             "edge_execution_rate": self.edge_executions / count,
             "cloud_execution_rate": self.cloud_executions / count,
-            "mean_selected_hops": mean_hops,
+            "mean_selected_hops": mean_selected_hops,
         }

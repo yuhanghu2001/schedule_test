@@ -20,6 +20,7 @@ class TaskSamplingTest(unittest.TestCase):
             min_edge_compute,
             slack_min,
             slack_max,
+            0.6,
         )
 
         for task in tasks:
@@ -33,6 +34,12 @@ class TaskSamplingTest(unittest.TestCase):
             self.assertGreaterEqual(slack, slack_min)
             self.assertLessEqual(slack, slack_max)
         self.assertGreater(max(task.deadline_s for task in tasks), 0.95)
+        self.assertAlmostEqual(
+            np.mean([task.must_offload for task in tasks]), 0.6, delta=0.12,
+        )
+        self.assertTrue(all(
+            task.allow_offload for task in tasks if task.must_offload
+        ))
 
 
 if __name__ == "__main__":

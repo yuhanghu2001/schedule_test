@@ -48,7 +48,7 @@ class AdditiveRewardTest(unittest.TestCase):
 
     def test_low_cost_accept_is_better_than_reject(self):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=1, tasks_per_slot=1)
-        task = Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1, False)
+        task = Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1, False, False)
         accept_env = EdgeEnv(cfg)
         accept_env.tasks = [task]
         accept_env.idx = 0
@@ -70,8 +70,8 @@ class AdditiveRewardTest(unittest.TestCase):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=2, tasks_per_slot=2)
         env = EdgeEnv(cfg)
         env.tasks = [
-            Task(1, 1, 0, 1., .1, 1., .5, .5, .5, 1, False),
-            Task(1, 1, 0, 1., .1, 1., .5, .5, .5, 1, False),
+            Task(1, 1, 0, 1., .1, 1., .5, .5, .5, 1, False, False),
+            Task(1, 1, 0, 1., .1, 1., .5, .5, .5, 1, False, False),
         ]
         env.idx = 0
         env.observe()

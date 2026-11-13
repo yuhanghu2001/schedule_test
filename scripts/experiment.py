@@ -23,6 +23,8 @@ METRICS = (
     "feasible_task_rate",
     "conditional_reject_rate",
     "forced_reject_rate",
+    "mean_hops_accepted",
+    "mean_selected_hops",
 )
 
 

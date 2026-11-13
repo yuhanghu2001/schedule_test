@@ -52,7 +52,7 @@ class EnvironmentContinuousIntegrationTest(unittest.TestCase):
         return Task(
             source=0, access_edge=0, kind=0, data_mb=0.5, output_mb=0.05,
             compute_gflop=1.0, deadline_s=0.5, memory_gb=0.5,
-            storage_gb=0.5, priority=1, allow_offload=False,
+            storage_gb=0.5, priority=1, allow_offload=False, must_offload=False,
         )
 
     def test_local_group_reallocation_updates_existing_metrics(self):
@@ -82,7 +82,7 @@ class EnvironmentContinuousIntegrationTest(unittest.TestCase):
         task = Task(
             source=0, access_edge=0, kind=0, data_mb=0.1, output_mb=0.05,
             compute_gflop=0.1, deadline_s=0.5, memory_gb=0.2,
-            storage_gb=0.2, priority=1, allow_offload=True,
+            storage_gb=0.2, priority=1, allow_offload=True, must_offload=False,
         )
         env.tasks = [task]
         env.idx = 0
@@ -92,6 +92,8 @@ class EnvironmentContinuousIntegrationTest(unittest.TestCase):
         self.assertAlmostEqual(env.slot_link_used[0, env.cloud], task.data_mb)
         self.assertAlmostEqual(env.slot_link_used[env.cloud, 0], task.output_mb)
         self.assertEqual(env.total_hops, 0)
+        self.assertEqual(env.total_selected_hops, 2)
+        self.assertEqual(env.metrics()["mean_selected_hops"], 2.0)
         self.assertGreater(action.uplink_power, 0.0)
 
 

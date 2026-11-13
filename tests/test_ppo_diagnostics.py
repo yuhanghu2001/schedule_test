@@ -43,7 +43,7 @@ class PPODiagnosticsTest(unittest.TestCase):
     def test_only_reject_action_has_zero_entropy(self):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=1)
         env = EdgeEnv(cfg)
-        env.tasks = [Task(0, 0, 0, .1, .1, .1, .5, 100., .1, 1, False)]
+        env.tasks = [Task(0, 0, 0, .1, .1, .1, .5, 100., .1, 1, False, False)]
         env.idx = 0
         obs = env.observe()
         distribution, _ = GATPPO()(obs)

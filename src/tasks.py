@@ -15,6 +15,7 @@ class Task:
     storage_gb: float
     priority: int
     allow_offload: bool
+    must_offload: bool
 
 
 def sample_tasks(
@@ -26,6 +27,7 @@ def sample_tasks(
     min_edge_compute_gflops: float,
     deadline_slack_min: float,
     deadline_slack_max: float,
+    must_offload_rate: float,
 ) -> list[Task]:
     tasks = []
     for _ in range(n):
@@ -40,6 +42,9 @@ def sample_tasks(
         deadline_s = (min_uplink + min_download + min_compute) * rng.uniform(
             deadline_slack_min, deadline_slack_max,
         )
+        offload_draw = rng.random()
+        must_offload = bool(offload_draw < must_offload_rate)
+        allow_offload = bool(offload_draw < 0.93) or must_offload
         tasks.append(Task(
             source=source,
             access_edge=source % edges,
@@ -51,6 +56,7 @@ def sample_tasks(
             memory_gb=float(rng.uniform(0.2, 2.0)),
             storage_gb=float(rng.uniform(0.1, 2.0)),
             priority=int(rng.integers(1, 6)),
-            allow_offload=bool(rng.random() < 0.93),
+            allow_offload=allow_offload,
+            must_offload=must_offload,
         ))
     return tasks

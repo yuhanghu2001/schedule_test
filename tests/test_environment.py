@@ -13,7 +13,7 @@ class EnvironmentDynamicsTest(unittest.TestCase):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=1)
         env = EdgeEnv(cfg)
         env.tasks = [
-            Task(0, 0, 3, 1.0, 0.1, 1.0, 10.0, 0.5, 0.5, 1, True),
+            Task(0, 0, 3, 1.0, 0.1, 1.0, 10.0, 0.5, 0.5, 1, True, True),
         ]
         env.idx = 0
         env.observe()
@@ -30,13 +30,14 @@ class EnvironmentDynamicsTest(unittest.TestCase):
         ))
         self.assertTrue(all(len(action.path) > 1 for action in edge_actions))
         self.assertTrue(any(action.destination == env.cloud for action in env.actions))
+        self.assertFalse(any(action.destination == -1 for action in env.actions))
 
     def test_kkt_reallocation_updates_previous_task(self):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=2, tasks_per_slot=2)
         env = EdgeEnv(cfg)
         env.tasks = [
-            Task(1, 1, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1, False),
-            Task(1, 1, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1, False),
+            Task(1, 1, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1, False, False),
+            Task(1, 1, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1, False, False),
         ]
         env.idx = 0
         env.observe()

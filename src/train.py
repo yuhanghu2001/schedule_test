@@ -163,6 +163,7 @@ with (open(run_dir / "train_metrics.jsonl", "x", encoding="utf-8") as metrics_fi
             "episode": last_episode,
             "累计奖励": metrics["episode_reward"],
             "任务完成率": metrics["task_success_rate"],
+            "平均选中跳数": metrics["mean_selected_hops"],
             "任务平均完成时间": metrics["avg_delay_s"],
             "任务平均能耗": metrics["avg_energy_j"],
             "负载均衡度": metrics["load_balance_degree"],
