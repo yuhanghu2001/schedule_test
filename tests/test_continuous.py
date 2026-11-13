@@ -92,8 +92,8 @@ class EnvironmentContinuousIntegrationTest(unittest.TestCase):
         self.assertAlmostEqual(env.slot_link_used[0, env.cloud], task.data_mb)
         self.assertAlmostEqual(env.slot_link_used[env.cloud, 0], task.output_mb)
         self.assertEqual(env.total_hops, 0)
-        self.assertEqual(env.total_selected_hops, 2)
-        self.assertEqual(env.metrics()["mean_selected_hops"], 2.0)
+        self.assertEqual(env.total_path_length, 2)
+        self.assertEqual(env.metrics()["mean_path_length"], 2.0)
         self.assertGreater(action.uplink_power, 0.0)
 
 

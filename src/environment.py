@@ -88,7 +88,7 @@ class EdgeEnv:
         self.total_energy = 0.
         self.total_reward = 0.
         self.total_hops = 0
-        self.total_selected_hops = 0
+        self.total_path_length = 0
         self.total_load_variance = 0.
         self.load_samples = 0
         self.feasible_tasks = 0
@@ -415,7 +415,7 @@ class EdgeEnv:
             if 0 <= action.destination < self.cloud:
                 self.total_hops += max(0, len(action.path) - 1)
             if action.destination != -1:
-                self.total_selected_hops += len(action.path)
+                self.total_path_length += len(action.path)
             if action.destination == -1:
                 source = task.source
                 self.slot_local_resource_used[source, action.resource] = sum(
@@ -502,8 +502,8 @@ class EdgeEnv:
         priority_delay = self.sum_priority_delay / self.sum_priority if self.accepted else None
         avg_energy = self.total_energy / self.accepted if self.accepted else None
         mean_hops = self.total_hops / self.accepted if self.accepted else None
-        mean_selected_hops = (
-            self.total_selected_hops / self.accepted if self.accepted else None
+        mean_path_length = (
+            self.total_path_length / self.accepted if self.accepted else None
         )
         load_variance = self.total_load_variance / self.load_samples
         slot_count = (count + self.cfg.tasks_per_slot - 1) // self.cfg.tasks_per_slot
@@ -537,5 +537,5 @@ class EdgeEnv:
             "local_execution_rate": self.local_executions / count,
             "edge_execution_rate": self.edge_executions / count,
             "cloud_execution_rate": self.cloud_executions / count,
-            "mean_selected_hops": mean_selected_hops,
+            "mean_path_length": mean_path_length,
         }

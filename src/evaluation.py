@@ -22,7 +22,8 @@ EVALUATION_METRICS = (
     "local_execution_rate",
     "edge_execution_rate",
     "cloud_execution_rate",
-    "mean_selected_hops",
+    "mean_hops_accepted",
+    "mean_path_length",
 )
 
 
