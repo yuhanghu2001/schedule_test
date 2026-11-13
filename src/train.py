@@ -59,7 +59,8 @@ def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_sc
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", default="configs/default.json")
+parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
+                    default="default")
 parser.add_argument("--episodes", type=int, default=500,
                     help="训练结束时的总 episode 数")
 parser.add_argument("--model", choices=("gat", "flat", "shuffled_gat"), default="gat")
@@ -73,7 +74,6 @@ parser.add_argument("--threads", type=int, default=4,
                     help="PyTorch CPU 线程数；小图模型默认 4 线程")
 args = parser.parse_args()
 
-config_path = repository_path(args.config)
 resume_path = repository_path(args.resume) if args.resume else None
 resume_checkpoint = None
 if resume_path:
@@ -81,7 +81,7 @@ if resume_path:
     cfg = Config(**resume_checkpoint["config"])
     model_type = resume_checkpoint["model_type"]
 else:
-    cfg = load_config(config_path)
+    cfg = load_config(args.config)
     if args.seed is not None:
         cfg = replace(cfg, seed=args.seed)
     model_type = args.model
@@ -126,7 +126,7 @@ if resume_checkpoint:
 
 run_config = {
     "config": asdict(cfg),
-    "config_source": str(resume_path or config_path),
+    "config_source": str(resume_path or args.config),
     "model_type": model_type,
     "episodes": args.episodes,
     "resume": str(resume_path) if resume_path else None,

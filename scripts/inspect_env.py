@@ -3,7 +3,7 @@ from src.config import load_config
 from src.environment import EdgeEnv
 
 
-env = EdgeEnv(load_config("configs/small_smoke.json"))
+env = EdgeEnv(load_config("small_smoke"))
 print("网络邻接矩阵 (边缘 e0..e5，最后一个为云 c0)：")
 print(env.adj.astype(int))
 print("当前任务：", env.tasks[env.idx])

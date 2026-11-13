@@ -39,10 +39,6 @@ schedule_test/
 ├── README.md
 ├── requirements.txt
 ├── environment-gpu.yml               # RTX 50 系独立 GPU 环境
-├── configs/
-│   ├── default.json                  # 研究默认参数
-│   ├── small_smoke.json              # 轻量快速运行
-│   └── high_congestion.json          # 高拥塞场景
 ├── docs/
 │   ├── 01_环境开发说明书.md             # 从建模到代码与交付验收
 │   ├── 02_数学模型与C1-C24约束.md       # 24条约束的统一正确表达
@@ -52,7 +48,7 @@ schedule_test/
 ├── memory/                           # AI 对话与工作记录
 ├── src/
 │   ├── train.py                      # 完整训练、续训、日志和绘图入口
-│   ├── config.py                     # 配置
+│   ├── config.py                     # 全部参数与三套Python场景配置
 │   ├── tasks.py                      # 任务生成
 │   ├── topology.py                   # 动态连通图与简单路由
 │   ├── continuous.py                 # Dinkelbach 功率与 KKT 算力子问题

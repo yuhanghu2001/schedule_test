@@ -10,7 +10,8 @@ from src.environment import EdgeEnv
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", default="configs/small_smoke.json")
+parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
+                    default="small_smoke")
 args = parser.parse_args()
 cfg = load_config(args.config)
 with TemporaryDirectory(prefix="schedule_test_smoke_") as temporary:

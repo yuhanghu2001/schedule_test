@@ -463,6 +463,8 @@ class EdgeEnv:
         )
         reward_load_part = -self.cfg.reward_beta_load * normalized_load
         reward_constraint_part = -constraint_penalty
+        # r_i = beta_1*delta_i - y_i*(beta_2*t_i + beta_3*E_i)
+        #       - beta_4*D_load - Omega_i
         reward = (reward_completion_part + reward_delay_part + reward_energy_part
                   + reward_load_part + reward_constraint_part)
         self.total_reward += reward

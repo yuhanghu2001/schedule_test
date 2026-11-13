@@ -18,7 +18,8 @@ def new_run_dir():
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", default="configs/default.json")
+parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
+                    default="default")
 parser.add_argument("--seed", type=int, help="覆盖评估种子")
 parser.add_argument("--run-dir", help="评估配置和指标目录；默认创建北京时间结果目录")
 args = parser.parse_args()

@@ -12,7 +12,7 @@ from src.models.policy import GATPPO
 
 class PPOTrainingTest(unittest.TestCase):
     def test_default_parameters_match_experiment_table(self):
-        cfg = load_config("configs/default.json")
+        cfg = load_config("default")
         self.assertEqual(cfg.n_tasks, 200)
         self.assertEqual(cfg.gat_hidden_dim, 256)
         self.assertEqual(cfg.actor_hidden_dim, 128)
@@ -22,10 +22,16 @@ class PPOTrainingTest(unittest.TestCase):
         self.assertEqual(cfg.ppo_epochs, 5)
         self.assertEqual(cfg.dinkelbach_max_iterations, 4)
         self.assertEqual(cfg.dinkelbach_tolerance, 1e-3)
+        high_congestion = load_config("high_congestion")
+        self.assertEqual(high_congestion.congestion_min, 0.45)
+        self.assertEqual(high_congestion.congestion_max, 0.8)
+        small_smoke = load_config("small_smoke")
+        self.assertEqual(small_smoke.n_tasks, 36)
+        self.assertEqual(small_smoke.ppo_batch_size, 16)
 
     def test_minibatch_update_changes_parameters(self):
         cfg = replace(
-            load_config("configs/small_smoke.json"),
+            load_config("small_smoke"),
             n_tasks=12,
             tasks_per_slot=6,
             ppo_epochs=2,

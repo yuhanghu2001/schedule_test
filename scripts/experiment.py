@@ -34,8 +34,11 @@ def new_run_dir():
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", default="configs/default.json")
-parser.add_argument("--evaluation-config", help="评估场景配置；默认与训练配置相同")
+parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
+                    default="default")
+parser.add_argument("--evaluation-config",
+                    choices=("default", "high_congestion", "small_smoke"),
+                    help="评估场景配置；默认与训练配置相同")
 parser.add_argument("--episodes", type=int, default=100)
 parser.add_argument("--seeds", nargs="+", type=int, default=list(range(10)))
 parser.add_argument(

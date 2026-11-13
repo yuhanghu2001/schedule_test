@@ -20,7 +20,8 @@ def new_run_dir():
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", help="评估场景配置；默认使用 checkpoint 配置")
+parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
+                    help="评估场景配置；默认使用 checkpoint 配置")
 parser.add_argument("--checkpoint", required=True)
 parser.add_argument("--seed", type=int, help="覆盖评估种子")
 parser.add_argument("--run-dir", help="评估配置和指标目录；默认创建北京时间结果目录")

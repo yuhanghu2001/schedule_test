@@ -10,7 +10,7 @@ from src.models.policy import GATPPO
 
 class PolicyObservationTest(unittest.TestCase):
     def test_global_features_change_with_history(self):
-        cfg = replace(load_config("configs/small_smoke.json"), n_tasks=2)
+        cfg = replace(load_config("small_smoke"), n_tasks=2)
         env = EdgeEnv(cfg)
         initial = env.reset()["global_features"].copy()
         env.accepted = 1
@@ -20,7 +20,7 @@ class PolicyObservationTest(unittest.TestCase):
         self.assertFalse(np.array_equal(initial, changed))
 
     def test_actor_and_critic_accept_global_features(self):
-        env = EdgeEnv(load_config("configs/small_smoke.json"))
+        env = EdgeEnv(load_config("small_smoke"))
         obs = env.reset()
         self.assertEqual(obs["global_features"].shape, (9,))
         for use_gat in (True, False):
@@ -35,7 +35,7 @@ class PolicyObservationTest(unittest.TestCase):
             self.assertTrue(np.isfinite(value.item()))
 
     def test_global_features_are_decision_time_statistics(self):
-        env = EdgeEnv(load_config("configs/small_smoke.json"))
+        env = EdgeEnv(load_config("small_smoke"))
         obs = env.reset()
         self.assertEqual(obs["global_features"][0], 0.0)
         self.assertEqual(obs["global_features"][1], 0.0)

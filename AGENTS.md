@@ -22,6 +22,7 @@
 
 ## 目录职责
 
+- `src/config.py`：全部可调参数和 `default/high_congestion/small_smoke` 三套Python配置；禁止新增场景JSON作为参数源。
 - `src/topology.py`：动态稀疏拓扑、简单路径。
 - `src/tasks.py`：五类任务及任务流。
 - `src/environment.py`：任务到达、候选调度、状态转移和四目标统计。

@@ -8,7 +8,7 @@ from src.environment import EdgeEnv
 
 class MultihopActivationTest(unittest.TestCase):
     def test_feasibility_hops_and_completion_targets(self):
-        cfg = load_config("configs/default.json")
+        cfg = load_config("default")
         evaluation_cfg = replace(cfg, seed=cfg.evaluation_seed)
 
         empty_batch_metrics = evaluate_heuristic(EdgeEnv(replace(
