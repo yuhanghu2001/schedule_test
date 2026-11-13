@@ -1,4 +1,5 @@
 """训练与固定评估曲线。"""
+import json
 from pathlib import Path
 
 import matplotlib
@@ -62,7 +63,15 @@ def save_evaluation_plot(records, output):
 
 
 def load_jsonl(path):
-    import json
-
     with open(Path(path), encoding="utf-8") as file:
         return [json.loads(line) for line in file]
+
+
+def save_run_plots(run_dir):
+    run_dir = Path(run_dir)
+    training_records = load_jsonl(run_dir / "train_metrics.jsonl")
+    evaluation_records = load_jsonl(run_dir / "evaluation_metrics.jsonl")
+    if training_records:
+        save_training_plot(training_records, run_dir / "training_metrics.png")
+    if evaluation_records:
+        save_evaluation_plot(evaluation_records, run_dir / "evaluation_metrics.png")

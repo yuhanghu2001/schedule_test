@@ -19,7 +19,7 @@ from src.config import Config, load_config
 from src.environment import EdgeEnv
 from src.evaluation import evaluate_policy
 from src.models.policy import GATPPO
-from src.plotting import save_evaluation_plot, save_training_plot
+from src.plotting import save_run_plots
 
 
 def new_run_dir():
@@ -140,52 +140,54 @@ with open(run_dir / "train_config.json", "x", encoding="utf-8") as file:
 print(json.dumps({"训练设备": str(device), "CPU线程数": args.threads}, ensure_ascii=False))
 
 last_episode = start_episode
-plot_records = []
-evaluation_records = []
 validation_seeds = [
     cfg.evaluation_seed + offset for offset in range(cfg.evaluation_seed_count)
 ]
-with (open(run_dir / "train_metrics.jsonl", "x", encoding="utf-8") as metrics_file,
-      open(run_dir / "evaluation_metrics.jsonl", "x", encoding="utf-8") as evaluation_file):
-    for episode_index in range(start_episode, args.episodes):
-        rollout, metrics = trainer.collect_episode(env)
-        update_metrics = trainer.update(rollout)
-        last_episode = episode_index + 1
-        record = {
-            "episode": last_episode,
-            "seed": cfg.seed,
-            **update_metrics,
-            **metrics,
-        }
-        plot_records.append(record)
-        metrics_file.write(json.dumps(record, ensure_ascii=False) + "\n")
-        print(json.dumps({
-            "episode": last_episode,
-            "累计奖励": metrics["episode_reward"],
-            "任务完成率": metrics["task_success_rate"],
-            "平均传输路径长度": metrics["mean_path_length"],
-            "任务平均完成时间": metrics["avg_delay_s"],
-            "任务平均能耗": metrics["avg_energy_j"],
-            "负载均衡度": metrics["load_balance_degree"],
-        }, ensure_ascii=False))
-        if last_episode % cfg.eval_interval == 0 or last_episode == args.episodes:
-            evaluation = {
+interrupted = False
+try:
+    with (open(run_dir / "train_metrics.jsonl", "x", encoding="utf-8") as metrics_file,
+          open(run_dir / "evaluation_metrics.jsonl", "x", encoding="utf-8") as evaluation_file):
+        for episode_index in range(start_episode, args.episodes):
+            rollout, metrics = trainer.collect_episode(env)
+            update_metrics = trainer.update(rollout)
+            last_episode = episode_index + 1
+            record = {
                 "episode": last_episode,
-                **evaluate_policy(model, cfg, validation_seeds, model_type),
+                "seed": cfg.seed,
+                **update_metrics,
+                **metrics,
             }
-            evaluation_records.append(evaluation)
-            evaluation_file.write(json.dumps(evaluation, ensure_ascii=False) + "\n")
-            evaluation_score = evaluation["objective_score_mean"]
-            if evaluation_score > best_score:
-                best_score = evaluation_score
-                save_checkpoint(
-                    best_output, model, trainer, env, cfg,
-                    model_type, last_episode, best_score,
-                )
+            metrics_file.write(json.dumps(record, ensure_ascii=False) + "\n")
+            print(json.dumps({
+                "episode": last_episode,
+                "累计奖励": metrics["episode_reward"],
+                "任务完成率": metrics["task_success_rate"],
+                "平均传输路径长度": metrics["mean_path_length"],
+                "任务平均完成时间": metrics["avg_delay_s"],
+                "任务平均能耗": metrics["avg_energy_j"],
+                "负载均衡度": metrics["load_balance_degree"],
+            }, ensure_ascii=False))
+            if last_episode % cfg.eval_interval == 0 or last_episode == args.episodes:
+                evaluation = {
+                    "episode": last_episode,
+                    **evaluate_policy(model, cfg, validation_seeds, model_type),
+                }
+                evaluation_file.write(json.dumps(evaluation, ensure_ascii=False) + "\n")
+                evaluation_score = evaluation["objective_score_mean"]
+                if evaluation_score > best_score:
+                    best_score = evaluation_score
+                    save_checkpoint(
+                        best_output, model, trainer, env, cfg,
+                        model_type, last_episode, best_score,
+                    )
+except KeyboardInterrupt:
+    interrupted = True
+    print(json.dumps({"训练状态": "手动中断", "已完成回合": last_episode}, ensure_ascii=False))
 
-save_training_plot(plot_records, run_dir / "training_metrics.png")
-save_evaluation_plot(evaluation_records, run_dir / "evaluation_metrics.png")
+save_run_plots(run_dir)
 save_checkpoint(
     last_output, model, trainer, env, cfg,
     model_type, last_episode, best_score,
 )
+if interrupted:
+    print(json.dumps({"中断收尾": "已生成曲线并保存 last checkpoint"}, ensure_ascii=False))
