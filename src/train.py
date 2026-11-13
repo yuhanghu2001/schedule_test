@@ -101,7 +101,12 @@ last_name = Path(args.output).name if args.output else f"last_{model_type}_ppo.p
 last_output = run_dir / last_name
 best_output = run_dir / f"best_{model_type}_ppo.pt"
 
-model = GATPPO(use_gat=model_type != "flat").to(device)
+model = GATPPO(
+    gat_hidden=cfg.gat_hidden_dim,
+    actor_hidden=cfg.actor_hidden_dim,
+    critic_hidden=cfg.critic_hidden_dim,
+    use_gat=model_type != "flat",
+).to(device)
 trainer = PPOTrainer(model, cfg)
 env = model_environment(EdgeEnv(cfg), model_type, cfg.seed)
 start_episode = 0

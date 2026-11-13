@@ -37,3 +37,5 @@ episode_reward / N == objective_score
 ## 4. PPO 诊断和固定评估
 
 每轮记录 `policy_loss,value_loss,entropy,normalized_entropy,approx_kl,clip_fraction,explained_variance,grad_norm_preclip,value_mean,return_mean`。训练期间的随机动作曲线不用于选择模型；每25轮在固定验证种子上贪心评估，按 `objective_score` 均值保存 best checkpoint，并始终保存 last checkpoint。checkpoint 写入 `reward_version` 和 `observation_version`，禁止将新旧 reward 数值直接比较。
+
+PPO-Clip 在采样时保存旧策略的 `log_prob`，并在当前轨迹的5轮更新中固定它作为概率比分母；下一轮轨迹采样时直接使用更新后的策略。因此当前标准 PPO 实现不维护独立的目标策略网络，也不使用 `kappa=0.995` 的软更新；将该系数加入会改变为图中 MPPO 的旧策略网络变体，不再是当前 PPO-Clip 更新口径。

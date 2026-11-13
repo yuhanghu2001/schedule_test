@@ -8,7 +8,7 @@ class Config:
     evaluation_seed: int = 1042
     n_terminals: int = 20
     n_edges: int = 6
-    n_tasks: int = 240
+    n_tasks: int = 200
     tasks_per_slot: int = 12
     topology_period_slots: int = 25
     undirected_edge_links: int = 9
@@ -47,8 +47,8 @@ class Config:
     radio_bandwidth_mhz: float = 20.0
     uplink_max_power_w: float = 0.5
     uplink_circuit_power_w: float = 0.1
-    dinkelbach_tolerance: float = 1e-8
-    dinkelbach_max_iterations: int = 50
+    dinkelbach_tolerance: float = 1e-3
+    dinkelbach_max_iterations: int = 4
     compute_priority_exponent: float = 1.0
     reward_accept: float = 8.0
     reward_delay: float = 2.0
@@ -59,11 +59,15 @@ class Config:
     reward_variance_ref: float = 0.05
     reward_version: str = "v3_accept8_delay1"
     observation_version: str = "v2_global9"
-    learning_rate: float = 3e-4
+    gat_hidden_dim: int = 256
+    actor_hidden_dim: int = 128
+    critic_hidden_dim: int = 128
+    actor_learning_rate: float = 1e-4
+    critic_learning_rate: float = 1e-3
     gamma: float = 0.99
     gae_lambda: float = 0.95
     ppo_clip: float = 0.2
-    ppo_epochs: int = 3
+    ppo_epochs: int = 5
     ppo_batch_size: int = 64
     vf_coef: float = 0.5
     ent_coef: float = 0.01

@@ -29,7 +29,7 @@ RTX 50 系显卡需要支持 Blackwell 的 PyTorch 2.7 或更高版本。本机�
 
 训练过程可用 `Ctrl+C` 手动中断。训练入口会先关闭并刷新 JSONL，再根据已完成回合重建 `training_metrics.png` 和已有的 `evaluation_metrics.png`，同时保存 last checkpoint。
 
-环境中的候选动作枚举、多跳路径和物理约束仍是顺序相关的 Python/NumPy 逻辑，保留在 CPU；GAT-PPO 前向和参数更新可运行在 GPU。当前图只有7个节点，同一份240任务、1次PPO epoch的预热后基准中，CPU 4线程为0.702秒，CPU 32线程为2.354秒，RTX 5060为2.287秒，因此默认设备为CPU、默认线程数为4。GPU 主要用于后续“多环境并行 + 批量前向”版本，当前串行版本可用 `--device cuda` 做设备对照，但不建议用它跑正式500轮训练。
+环境中的候选动作枚举、多跳路径和物理约束仍是顺序相关的 Python/NumPy 逻辑，保留在 CPU；GAT-PPO 前向和参数更新可运行在 GPU。当前默认模型为两层256维GAT、128维Actor/Critic头，每轮200步并更新5个PPO epoch。旧的32维、1个PPO epoch设备基准不再代表当前配置，正式训练前需重新对比 CPU 与 GPU。
 
 ## 文件概览
 

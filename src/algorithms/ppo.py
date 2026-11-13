@@ -9,7 +9,16 @@ class PPOTrainer:
         self.model = model
         self.cfg = cfg
         self.device = next(model.parameters()).device
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate)
+        critic_parameters = list(model.critic.parameters())
+        critic_parameter_ids = {id(parameter) for parameter in critic_parameters}
+        actor_parameters = [
+            parameter for parameter in model.parameters()
+            if id(parameter) not in critic_parameter_ids
+        ]
+        self.optimizer = torch.optim.Adam([
+            {"params": actor_parameters, "lr": cfg.actor_learning_rate, "name": "actor"},
+            {"params": critic_parameters, "lr": cfg.critic_learning_rate, "name": "critic"},
+        ])
 
     def collect_episode(self, env):
         obs = env.reset()

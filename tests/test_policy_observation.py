@@ -24,7 +24,12 @@ class PolicyObservationTest(unittest.TestCase):
         obs = env.reset()
         self.assertEqual(obs["global_features"].shape, (9,))
         for use_gat in (True, False):
-            distribution, value = GATPPO(use_gat=use_gat)(obs)
+            model = GATPPO(use_gat=use_gat)
+            self.assertEqual(model.gat.layer1.transform.out_features, 256)
+            self.assertEqual(model.gat.layer2.transform.out_features, 256)
+            self.assertEqual(model.actor[0].out_features, 128)
+            self.assertEqual(model.critic[0].out_features, 128)
+            distribution, value = model(obs)
             self.assertEqual(len(distribution.probs), len(env.actions))
             self.assertTrue(np.all(np.isfinite(distribution.probs.detach().numpy())))
             self.assertTrue(np.isfinite(value.item()))

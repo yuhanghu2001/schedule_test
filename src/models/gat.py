@@ -23,7 +23,7 @@ class GraphAttentionLayer(nn.Module):
 
 
 class GATEncoder(nn.Module):
-    def __init__(self, node_dim=10, hidden=32):
+    def __init__(self, node_dim=10, hidden=256):
         super().__init__()
         self.layer1 = GraphAttentionLayer(node_dim, hidden)
         self.layer2 = GraphAttentionLayer(hidden, hidden)

@@ -11,6 +11,18 @@ from src.models.policy import GATPPO
 
 
 class PPOTrainingTest(unittest.TestCase):
+    def test_default_parameters_match_experiment_table(self):
+        cfg = load_config("configs/default.json")
+        self.assertEqual(cfg.n_tasks, 200)
+        self.assertEqual(cfg.gat_hidden_dim, 256)
+        self.assertEqual(cfg.actor_hidden_dim, 128)
+        self.assertEqual(cfg.critic_hidden_dim, 128)
+        self.assertEqual(cfg.actor_learning_rate, 1e-4)
+        self.assertEqual(cfg.critic_learning_rate, 1e-3)
+        self.assertEqual(cfg.ppo_epochs, 5)
+        self.assertEqual(cfg.dinkelbach_max_iterations, 4)
+        self.assertEqual(cfg.dinkelbach_tolerance, 1e-3)
+
     def test_minibatch_update_changes_parameters(self):
         cfg = replace(
             load_config("configs/small_smoke.json"),
@@ -23,6 +35,10 @@ class PPOTrainingTest(unittest.TestCase):
         np.random.seed(cfg.seed)
         model = GATPPO()
         trainer = PPOTrainer(model, cfg)
+        self.assertEqual(trainer.optimizer.param_groups[0]["name"], "actor")
+        self.assertEqual(trainer.optimizer.param_groups[0]["lr"], 1e-4)
+        self.assertEqual(trainer.optimizer.param_groups[1]["name"], "critic")
+        self.assertEqual(trainer.optimizer.param_groups[1]["lr"], 1e-3)
         episode, _ = trainer.collect_episode(EdgeEnv(cfg))
         for obs, action, old_logprob, _, _, _ in episode:
             distribution, _ = model(obs)

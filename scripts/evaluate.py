@@ -47,7 +47,12 @@ np.random.seed(evaluation_seed)
 run_dir = Path(args.run_dir) if args.run_dir else new_run_dir()
 run_dir.mkdir(parents=True, exist_ok=bool(args.run_dir))
 
-model = GATPPO(use_gat=model_type != "flat").to(device)
+model = GATPPO(
+    gat_hidden=training_cfg.gat_hidden_dim,
+    actor_hidden=training_cfg.actor_hidden_dim,
+    critic_hidden=training_cfg.critic_hidden_dim,
+    use_gat=model_type != "flat",
+).to(device)
 model.load_state_dict(checkpoint["model"])
 model.eval()
 

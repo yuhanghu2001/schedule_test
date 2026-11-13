@@ -6,15 +6,19 @@ from .gat import GATEncoder
 
 
 class GATPPO(nn.Module):
-    def __init__(self, hidden=32, use_gat=True, global_dim=9):
+    def __init__(self, gat_hidden=256, actor_hidden=128, critic_hidden=128,
+                 use_gat=True, global_dim=9):
         super().__init__()
         self.use_gat = use_gat
-        self.gat = GATEncoder(10, hidden)
-        self.flat_encoder = nn.Sequential(nn.Linear(10, hidden), nn.Tanh())
-        self.actor = nn.Sequential(nn.Linear(hidden * 3 + 8 + 10 + global_dim, 64), nn.Tanh(),
-                                   nn.Linear(64, 1))
+        self.gat = GATEncoder(10, gat_hidden)
+        self.flat_encoder = nn.Sequential(nn.Linear(10, gat_hidden), nn.Tanh())
+        self.actor = nn.Sequential(
+            nn.Linear(gat_hidden * 3 + 8 + 10 + global_dim, actor_hidden),
+            nn.Tanh(), nn.Linear(actor_hidden, 1),
+        )
         self.critic = nn.Sequential(
-            nn.Linear(hidden * 2 + 8 + global_dim, 64), nn.Tanh(), nn.Linear(64, 1)
+            nn.Linear(gat_hidden * 2 + 8 + global_dim, critic_hidden),
+            nn.Tanh(), nn.Linear(critic_hidden, 1),
         )
 
     def forward(self, obs):
