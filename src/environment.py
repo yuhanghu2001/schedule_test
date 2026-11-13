@@ -373,18 +373,16 @@ class EdgeEnv:
 
     def step(self, action_id: int):
         task = self.tasks[self.idx]
-        action = self.actions[action_id]
-        before_delay = self.sum_delay
-        before_energy = self.total_energy
-        before_variance = self._load_variance()
         feasible_count = len(self.actions) - 1
-        accepted = action.destination != -2
+        invalid_action = action_id < 0 or action_id >= len(self.actions)
+        action = self.actions[-1] if invalid_action else self.actions[action_id]
+        accepted = not invalid_action and action.destination != -2
         self.action_count_sum += len(self.actions)
         if feasible_count:
             self.feasible_tasks += 1
-            if not accepted:
+            if not accepted and not invalid_action:
                 self.conditional_rejects += 1
-        elif not accepted:
+        elif not accepted and not invalid_action:
             self.forced_rejects += 1
         if accepted:
             allocation = self._group_allocation(
@@ -444,21 +442,29 @@ class EdgeEnv:
                 self.cloud_executions += 1
             else:
                 self.edge_executions += 1
-        delta_delay = self.sum_delay - before_delay
-        delta_energy = self.total_energy - before_energy
-        delta_variance = self._load_variance() - before_variance
-        task_count = len(self.tasks)
-        slot_count = (task_count + self.cfg.tasks_per_slot - 1) // self.cfg.tasks_per_slot
-        tasks_per_counted_slot = task_count / slot_count
-        reward_accept_part = self.cfg.reward_accept * float(accepted)
-        reward_delay_part = -self.cfg.reward_delay * delta_delay / self.cfg.reward_delay_ref
-        reward_energy_part = -self.cfg.reward_energy * delta_energy / self.cfg.reward_energy_ref
-        reward_balance_part = (
-            -self.cfg.reward_balance * tasks_per_counted_slot
-            * delta_variance / self.cfg.reward_variance_ref
+        completed = accepted and action.delay <= task.deadline_s
+        normalized_delay = action.delay / self.cfg.reward_delay_ref if accepted else 0.0
+        normalized_energy = action.energy / self.cfg.reward_energy_ref if accepted else 0.0
+        normalized_load = self._load_variance() / self.cfg.reward_variance_ref
+        if invalid_action:
+            constraint_penalty = self.cfg.reward_penalty_invalid
+        elif accepted and not completed:
+            constraint_penalty = self.cfg.reward_penalty_incomplete
+        elif not accepted and feasible_count:
+            constraint_penalty = self.cfg.reward_penalty_conditional_reject
+        else:
+            constraint_penalty = 0.0
+        reward_completion_part = self.cfg.reward_beta_completion * float(completed)
+        reward_delay_part = (
+            -self.cfg.reward_beta_delay * float(accepted) * normalized_delay
         )
-        reward = (reward_accept_part + reward_delay_part
-                  + reward_energy_part + reward_balance_part)
+        reward_energy_part = (
+            -self.cfg.reward_beta_energy * float(accepted) * normalized_energy
+        )
+        reward_load_part = -self.cfg.reward_beta_load * normalized_load
+        reward_constraint_part = -constraint_penalty
+        reward = (reward_completion_part + reward_delay_part + reward_energy_part
+                  + reward_load_part + reward_constraint_part)
         self.total_reward += reward
         self.idx += 1
         done = self.idx == len(self.tasks)
@@ -488,13 +494,17 @@ class EdgeEnv:
         return obs, float(reward), done, {"accepted": accepted, "destination": action.destination,
                                           "resource": action.resource, "path": action.path,
                                           "delay": action.delay, "energy": action.energy,
+                                          "load_variance": normalized_load * self.cfg.reward_variance_ref,
                                           "f": action.compute_share,
                                           "p_up": action.uplink_power,
                                           "feasible_count": feasible_count,
-                                          "reward_accept_part": reward_accept_part,
+                                          "invalid_action": invalid_action,
+                                          "completed": completed,
+                                          "reward_completion_part": reward_completion_part,
                                           "reward_delay_part": reward_delay_part,
                                           "reward_energy_part": reward_energy_part,
-                                          "reward_balance_part": reward_balance_part}
+                                          "reward_load_part": reward_load_part,
+                                          "reward_constraint_part": reward_constraint_part}
 
     def metrics(self):
         count = len(self.tasks)
@@ -506,14 +516,7 @@ class EdgeEnv:
             self.total_path_length / self.accepted if self.accepted else None
         )
         load_variance = self.total_load_variance / self.load_samples
-        slot_count = (count + self.cfg.tasks_per_slot - 1) // self.cfg.tasks_per_slot
-        objective_score = (
-            self.cfg.reward_accept * self.accepted / count
-            - self.cfg.reward_delay * self.sum_delay / (count * self.cfg.reward_delay_ref)
-            - self.cfg.reward_energy * self.total_energy / (count * self.cfg.reward_energy_ref)
-            - self.cfg.reward_balance * self.total_load_variance
-            / (slot_count * self.cfg.reward_variance_ref)
-        )
+        objective_score = self.total_reward / count
         return {
             "tasks": count,
             "task_success_rate": self.accepted / count,

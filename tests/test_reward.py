@@ -19,14 +19,37 @@ def run_episode(cfg, selector):
 
 
 class AdditiveRewardTest(unittest.TestCase):
-    def test_all_reject_is_zero(self):
-        cfg = replace(load_config("configs/small_smoke.json"), n_tasks=5, tasks_per_slot=2)
-        metrics = run_episode(cfg, lambda env: len(env.actions) - 1)
-        self.assertEqual(metrics["task_success_rate"], 0.0)
-        self.assertEqual(metrics["episode_reward"], 0.0)
-        self.assertEqual(metrics["objective_score"], 0.0)
-        self.assertIsNone(metrics["avg_delay_s"])
-        self.assertIsNone(metrics["avg_energy_j"])
+    def test_conditional_reject_uses_omega_3(self):
+        cfg = replace(load_config("configs/small_smoke.json"), n_tasks=1, tasks_per_slot=1)
+        env = EdgeEnv(cfg)
+        env.tasks = [Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1, False, False)]
+        env.idx = 0
+        env.observe()
+        _, reward, _, info = env.step(len(env.actions) - 1)
+        self.assertEqual(info["feasible_count"] > 0, True)
+        self.assertEqual(info["reward_constraint_part"], -cfg.reward_penalty_conditional_reject)
+        self.assertEqual(reward, -cfg.reward_penalty_conditional_reject)
+
+    def test_forced_reject_has_no_constraint_penalty(self):
+        cfg = replace(load_config("configs/small_smoke.json"), n_tasks=1, tasks_per_slot=1)
+        env = EdgeEnv(cfg)
+        env.tasks = [Task(0, 0, 0, .1, .01, .1, .5, 1e9, 1e9, 1, True, True)]
+        env.idx = 0
+        env.observe()
+        self.assertEqual(len(env.actions), 1)
+        _, reward, _, info = env.step(0)
+        self.assertEqual(info["reward_constraint_part"], 0.0)
+        self.assertEqual(reward, 0.0)
+
+    def test_invalid_action_uses_omega_2(self):
+        cfg = replace(load_config("configs/small_smoke.json"), n_tasks=1, tasks_per_slot=1)
+        env = EdgeEnv(cfg)
+        env.reset()
+        _, reward, done, info = env.step(-1)
+        self.assertTrue(done)
+        self.assertTrue(info["invalid_action"])
+        self.assertEqual(info["reward_constraint_part"], -cfg.reward_penalty_invalid)
+        self.assertEqual(reward, -cfg.reward_penalty_invalid)
 
     def test_reward_matches_objective_for_three_policies(self):
         selectors = (
@@ -85,7 +108,7 @@ class AdditiveRewardTest(unittest.TestCase):
             accept_metrics["objective_score"], reject_metrics["objective_score"],
         )
 
-    def test_group_reallocation_uses_total_deltas(self):
+    def test_reward_uses_current_task_delay_and_energy(self):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=2, tasks_per_slot=2)
         env = EdgeEnv(cfg)
         env.tasks = [
@@ -97,33 +120,30 @@ class AdditiveRewardTest(unittest.TestCase):
         action = next(i for i, item in enumerate(env.actions)
                       if item.destination == -1 and item.resource == 0)
         env.step(action)
-        before_delay = env.sum_delay
-        before_energy = env.total_energy
         action = next(i for i, item in enumerate(env.actions)
                       if item.destination == -1 and item.resource == 0)
         _, _, _, info = env.step(action)
-        delta_delay = -info["reward_delay_part"] * cfg.reward_delay_ref / cfg.reward_delay
-        delta_energy = -info["reward_energy_part"] * cfg.reward_energy_ref / cfg.reward_energy
-        self.assertAlmostEqual(delta_delay, env.sum_delay - before_delay)
-        self.assertAlmostEqual(delta_energy, env.total_energy - before_energy)
-        self.assertGreater(delta_delay, info["delay"])
+        rewarded_delay = (
+            -info["reward_delay_part"] * cfg.reward_delay_ref / cfg.reward_beta_delay
+        )
+        rewarded_energy = (
+            -info["reward_energy_part"] * cfg.reward_energy_ref / cfg.reward_beta_energy
+        )
+        self.assertAlmostEqual(rewarded_delay, info["delay"])
+        self.assertAlmostEqual(rewarded_energy, info["energy"])
 
-    def test_partial_last_slot_balance_telescopes(self):
+    def test_load_penalty_uses_current_normalized_variance(self):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=5, tasks_per_slot=2)
         env = EdgeEnv(cfg)
         env.reset()
-        balance_reward = 0.0
         done = False
         while not done:
             action = 0 if len(env.actions) > 1 else len(env.actions) - 1
             _, _, done, info = env.step(action)
-            balance_reward += info["reward_balance_part"]
-        slot_count = 3
-        expected = (
-            -cfg.reward_balance * (cfg.n_tasks / slot_count)
-            * env.total_load_variance / cfg.reward_variance_ref
-        )
-        self.assertAlmostEqual(balance_reward, expected)
+            expected = (
+                -cfg.reward_beta_load * info["load_variance"] / cfg.reward_variance_ref
+            )
+            self.assertAlmostEqual(info["reward_load_part"], expected)
 
 
 if __name__ == "__main__":

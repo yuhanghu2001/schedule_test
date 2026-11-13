@@ -2,33 +2,33 @@
 
 ## 1. 实验报告指标与训练标量
 
-论文与实验分别报告任务完成率 `R_suc`、成功任务平均时延 `T_avg`、成功任务平均能耗 `E_avg` 和时隙平均负载方差 `D_load`。训练不直接重复累加这些截至当前的均值，而使用固定任务数分母的可加目标：
+论文与实验分别报告任务完成率 `R_suc`、成功任务平均时延 `T_avg`、成功任务平均能耗 `E_avg` 和时隙平均负载方差 `D_load`。训练单步奖励与论文公式保持一致：
 
 ```text
-J = 8*A/N
-  - 2*T_sum/(N*1.0)
-  - E_sum/(N*3.0)
-  - sum(V_s)/(S*0.05)
+r_i = beta_1*delta_i
+    - y_i*(beta_2*t_i + beta_3*E_i)
+    - beta_4*D_load
+    - Omega_i
 ```
 
-`8:2:1:1` 是完成收益与时延、能耗、负载不均衡成本的工程系数。时延参考尺度同步调整为 `1.0s`，以匹配 deadline 放宽后的时延分布；这些数值必须通过固定场景和多种子实验校准，不写成已证明最优权重。
+`beta_1:beta_2:beta_3:beta_4=2:1:1:1`。`t_i`、`E_i` 和 `D_load` 分别用 `1.0s`、`3.0J` 和 `0.05` 归一化。
 
 ## 2. 单步奖励不变量
 
 ```text
-r_t = 8*accepted
-    - 2*delta_delay/1.0
-    - delta_energy/3.0
-    - (N/S)*delta_variance/0.05
+r_i = 2*completed
+    - accepted*(delay/1.0 + energy/3.0)
+    - load_variance/0.05
+    - constraint_penalty
 ```
 
-`delta_delay` 和 `delta_energy` 使用环境总统计的前后差，因此包含并发组 KKT 重分配对旧任务的修正。时隙内负载方差增量望远镜求和。未折扣奖励必须通过测试满足：
+约束惩罚按图中分段定义：接收但未按期完成为 `omega_1`，不可行动作为 `omega_2`，存在可行动作时主动拒绝为 `omega_3`，默认均为 `1.0`。不可行动作不会进入候选集，无可行动作时拒绝不惩罚。未折扣奖励满足：
 
 ```text
 episode_reward / N == objective_score
 ```
 
-拒绝动作本身奖励为0；可行低成本接收动作应由正完成收益获得更高奖励。只在固定评估证明策略过度主动拒绝后，才增加单独拒绝惩罚。
+这里 `objective_score` 定义为 `episode_reward/N`，与带约束惩罚的训练奖励口径一致；四项原始报告指标仍分开输出。
 
 ## 3. 观测与价值估计
 
