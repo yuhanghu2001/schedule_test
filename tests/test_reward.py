@@ -66,6 +66,25 @@ class AdditiveRewardTest(unittest.TestCase):
         _, reject_reward, _, _ = reject_env.step(len(reject_env.actions) - 1)
         self.assertGreater(accept_reward, reject_reward)
 
+    def test_accept_all_objective_beats_rejecting_long_delay(self):
+        cfg = replace(load_config("configs/default.json"), seed=1042)
+
+        def accept_all(env):
+            return shortest_fastest_action(env.actions)
+
+        def reject_long_delay(env):
+            action = shortest_fastest_action(env.actions)
+            if action < len(env.actions) - 1 and env.actions[action].delay > 0.9:
+                return len(env.actions) - 1
+            return action
+
+        accept_metrics = run_episode(cfg, accept_all)
+        reject_metrics = run_episode(cfg, reject_long_delay)
+        self.assertGreater(accept_metrics["objective_score"], 0.0)
+        self.assertGreater(
+            accept_metrics["objective_score"], reject_metrics["objective_score"],
+        )
+
     def test_group_reallocation_uses_total_deltas(self):
         cfg = replace(load_config("configs/small_smoke.json"), n_tasks=2, tasks_per_slot=2)
         env = EdgeEnv(cfg)

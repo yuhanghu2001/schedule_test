@@ -50,14 +50,14 @@ class Config:
     dinkelbach_tolerance: float = 1e-8
     dinkelbach_max_iterations: int = 50
     compute_priority_exponent: float = 1.0
-    reward_accept: float = 4.0
+    reward_accept: float = 8.0
     reward_delay: float = 2.0
     reward_energy: float = 1.0
     reward_balance: float = 1.0
-    reward_delay_ref: float = 0.5
+    reward_delay_ref: float = 1.0
     reward_energy_ref: float = 3.0
     reward_variance_ref: float = 0.05
-    reward_version: str = "v2_additive"
+    reward_version: str = "v3_accept8_delay1"
     observation_version: str = "v2_global9"
     learning_rate: float = 3e-4
     gamma: float = 0.99
