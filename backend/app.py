@@ -24,7 +24,7 @@ async def lifespan(app):
 app = FastAPI(title="云边端调度系统", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|\[::1\]):(517[3-9]|4173)",
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|\[::1\]):(8888|4173)",
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )

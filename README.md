@@ -23,6 +23,52 @@ results/
     └── config.json
 ```
 
+## 前后端一键启动
+
+在仓库根目录操作。首次安装 JavaScript 依赖：
+
+```bash
+npm install
+```
+
+后端使用 Conda 的 `gatppo` 环境；首次使用时安装 Python 依赖（已有环境无需重新创建）：
+
+```bash
+conda create -n gatppo python=3.11
+conda run -n gatppo python -m pip install -r requirements.txt -r backend/requirements.txt
+```
+
+之后每次只需运行：
+
+```bash
+npm start
+```
+
+`npm run dev` 与 `npm start` 等效，在 `frontend/` 目录运行也可以。启动命令同时运行 FastAPI 和 Vite，无需手动激活 Conda 环境；按 `Ctrl+C` 同时停止两个服务，其中一个服务退出时也会停止另一个。
+
+- 浏览器打开 **http://localhost:8888**；远程访问用 `http://服务器IP:8888`。
+- 后端接口文档：http://localhost:8000/docs。
+- 前端的 `/api` 和 `/ws` 请求通过 Vite 转发至本机 `8000` 端口。
+- 前端固定使用 `8888`，端口占用时会报错，避免自动切换后访问错地址。
+- `npm run build` 构建前端静态产物，不启动服务。
+
+**数据库首次配置**：MySQL 需单独安装并启动，一键命令只负责前后端进程。使用管理员账户执行以下 SQL（将示例密码替换为自己的密码）：
+
+```sql
+CREATE DATABASE schedule_test CHARACTER SET utf8mb4;
+CREATE USER 'schedule'@'127.0.0.1' IDENTIFIED BY 'your_password';
+GRANT ALL PRIVILEGES ON schedule_test.* TO 'schedule'@'127.0.0.1';
+```
+
+然后在仓库根目录执行并编辑 `backend/.env`，设置对应的 `MYSQL_PASSWORD`：
+
+```bash
+cp backend/.env.example backend/.env
+mysql -h 127.0.0.1 -u schedule -p schedule_test < backend/schema.sql
+```
+
+访问 http://localhost:8888/api/health，`db_connected: true` 表示数据库连接成功。未连接 MySQL 时页面和内存仿真可以启动，保存环境配置、训练记录和实验档案等数据库功能不可用。
+
 ## 训练设备与线程
 
 当前小图逐任务训练在 CPU 上显著快于 GPU，**默认使用 `gatppo` 环境与 `--device cpu --threads 2`**（`conda run -n gatppo python src/train.py`）。如需在 RTX 50 系显卡上做 GPU 对照，可使用独立的 `gatppo-gpu` 环境（`conda run -n gatppo-gpu python src/train.py --device cuda --threads 2`）。`--device auto` 会在 CUDA 可用时选择 GPU，训练配置快照会记录实际设备和 CPU 线程数。
