@@ -50,9 +50,9 @@ class EdgeEnv:
         self.service_deployment = np.asarray(cfg.service_deployment, dtype=bool)[
             edge_ids % len(cfg.service_deployment)
         ]
-        self.mem_cap = np.array([32.] * cfg.n_edges + [128.], dtype=np.float32)
-        self.storage_cap = np.array([1000.] * cfg.n_edges + [4000.], dtype=np.float32)
-        self.queue_cap = np.array([60.] * cfg.n_edges + [80.], dtype=np.float32)
+        self.mem_cap = np.array(cfg.node_memory_gb or [32.] * cfg.n_edges + [128.], dtype=np.float32)
+        self.storage_cap = np.array(cfg.node_storage_gb or [1000.] * cfg.n_edges + [4000.], dtype=np.float32)
+        self.queue_cap = np.array(cfg.node_queue_capacity or [60.] * cfg.n_edges + [80.], dtype=np.float32)
         self.resource_power = np.array([10., 18., 12.], dtype=np.float32)
         self.support = np.array([[1, 1, 1, 1, 1], [1, 1, 1, 0, 0], [0, 0, 1, 1, 1]], dtype=bool)
         self.reset()
@@ -64,6 +64,8 @@ class EdgeEnv:
         self.radio_rates = self.rng.uniform(
             c.radio_rate_min_mbps, c.radio_rate_max_mbps, c.n_terminals,
         )
+        if c.terminal_radio_rates_mbps:
+            self.radio_rates = np.asarray(c.terminal_radio_rates_mbps, dtype=float)
         self.tasks = sample_tasks(
             self.rng,
             c.episode_slots,

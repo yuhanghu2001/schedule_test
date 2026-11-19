@@ -4,3 +4,4 @@ __pycache__/
 backend/.env
 node_modules/
 frontend/dist/
+.local/

@@ -26,8 +26,10 @@ def config_from_dict(data):
     for key in ("service_deployment", "edge_speed_matrix"):
         if key in values:
             values[key] = tuple(map(tuple, values[key]))
-    if "cloud_speed" in values:
-        values["cloud_speed"] = tuple(values["cloud_speed"])
+    for key in ("cloud_speed", "terminal_radio_rates_mbps", "node_memory_gb",
+                "node_storage_gb", "node_queue_capacity"):
+        if key in values:
+            values[key] = tuple(values[key])
     if "n_edges" in values and "undirected_edge_links" not in values:
         values["undirected_edge_links"] = max(Config.undirected_edge_links, values["n_edges"])
     return Config(**values)

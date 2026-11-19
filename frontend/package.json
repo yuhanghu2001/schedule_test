@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently --kill-others --names api,web \"npm run dev:api\" \"npm run dev:web\"",
+    "dev": "cd .. && conda run --no-capture-output -n gatppo python -m scripts.dev",
     "start": "npm run dev",
     "dev:web": "vite --host 0.0.0.0 --port 8888 --strictPort",
     "dev:api": "cd .. && conda run --no-capture-output -n gatppo python -m uvicorn backend.app:app --host 0.0.0.0 --port 8000",
@@ -21,7 +21,6 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
-    "vite": "^6.0.7",
-    "concurrently": "^9.2.1"
+    "vite": "^6.0.7"
   }
 }

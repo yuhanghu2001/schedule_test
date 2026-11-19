@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { toRaw, ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAppStore } from '../stores/app'
 import api, { trainingSocket } from '../api/client'
@@ -11,11 +11,20 @@ const groups = [ ['规模与任务流', [['n_terminals','端侧数量'],['n_edge
 const trainFields = [['gat_hidden_dim','GAT 隐层'],['actor_hidden_dim','Actor 隐层'],['critic_hidden_dim','Critic 隐层'],['actor_learning_rate','Actor 学习率'],['critic_learning_rate','Critic 学习率'],['gamma','折扣因子 γ'],['gae_lambda','GAE λ'],['ppo_clip','PPO Clip'],['ppo_epochs','PPO 更新轮次'],['ppo_batch_size','Batch size'],['ent_coef','熵系数'],['eval_interval','评估间隔']]
 const progress = computed(()=>run.value?.episodes ? Math.min(100,Math.round(100*(run.value.current_episode || 0)/run.value.episodes)) : 0)
 const latest = computed(()=>metrics.value.training.at(-1) || {})
-watch(() => app.env?.config.n_edges, count => { if (!count || !app.env?.config.edge_speed_matrix) return; const c=app.env.config; while (c.edge_speed_matrix.length < count) { c.edge_speed_matrix.push([...c.edge_speed_matrix[c.edge_speed_matrix.length % 4]]); c.service_deployment.push([...c.service_deployment[c.service_deployment.length % 4]]) } c.edge_speed_matrix.length=count; c.service_deployment.length=count })
-function preset(name){ app.env = {preset_name:name,config:structuredClone(app.presets[name])}; savedId.value=null }
+watch(() => app.env?.config.n_edges, count => { if (!count || !app.env?.config.edge_speed_matrix) return; const c=app.env.config; while (c.edge_speed_matrix.length < count) { c.edge_speed_matrix.push([...c.edge_speed_matrix[c.edge_speed_matrix.length % 4]]); c.service_deployment.push([...c.service_deployment[c.service_deployment.length % 4]]) } c.edge_speed_matrix.length=count; c.service_deployment.length=count
+  for (const [key,capacity] of [['node_memory_gb',32],['node_storage_gb',1000],['node_queue_capacity',60]]) {
+    const values=c[key]
+    if (values?.length) { const cloud=values.pop(); while(values.length<count) values.push(capacity); values.length=count; values.push(cloud) }
+  }
+})
+watch(()=>app.env?.config.n_terminals,count=>{
+  const c=app.env?.config, rates=c?.terminal_radio_rates_mbps
+  if(rates?.length){while(rates.length<count)rates.push(c.radio_rate_min_mbps);rates.length=count}
+})
+function preset(name){ app.env = {preset_name:name,config:structuredClone(toRaw(app.presets[name]))}; savedId.value=null }
 async function preview(){ snapshot.value = await api.post('/env/preview',app.env); selected.value = snapshot.value.nodes[0] }
 async function save(){ const {value} = await ElMessageBox.prompt('为当前环境配置命名','保存到 MySQL',{inputValue:'我的环境配置'}); await api.post('/env/configs',{...app.env,name:value}); ElMessage.success('环境配置已保存'); configs.value = await api.get('/env/configs') }
-function loadSaved(id){ const c = configs.value.find(c=>c.id===id); app.env = {preset_name:c.preset_name,config:structuredClone(c.config_json)} }
+function loadSaved(id){ const c = configs.value.find(c=>c.id===id); app.env = {preset_name:c.preset_name,config:structuredClone(toRaw(c.config_json))} }
 function connect(id){ if(socket) socket.close(); socket = trainingSocket(id); socket.onmessage = event => { const e=JSON.parse(event.data); if(e.type==='metric') metrics.value.training.push(e.metrics); if(e.type==='evaluation') metrics.value.evaluation.push(e.metrics); if(e.metrics?.episode && run.value) run.value.current_episode=e.metrics.episode; if(e.type==='status' && run.value) run.value.status=e.status; if(e.type==='terminal') { if(run.value) run.value.status=e.status; app.checkHealth() } } }
 async function monitor(id){ run.value=await api.get(`/training/runs/${id}`); metrics.value=await api.get(`/training/runs/${id}/metrics`); if(['running','queued'].includes(run.value.status)) { metrics.value={training:[],evaluation:[]}; connect(id) } }
 async function start(){ const config={...app.env.config}; trainFields.forEach(([key])=>{ if(app.train[key] != null) config[key]=app.train[key] }); const result=await api.post('/training/runs',{...app.env,...app.train,config}); app.activeRun=result.run_id; run.value=result; metrics.value={training:[],evaluation:[]}; connect(result.run_id); tab.value='monitor'; app.checkHealth() }

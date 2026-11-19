@@ -62,6 +62,12 @@ class Config:
     ) * 3
     cloud_speed: tuple[float, float, float] = (8000.0, 12000.0, 8000.0)
 
+    # 节点管理：空元组使用原场景默认值，计算节点按边缘后接云端排列
+    terminal_radio_rates_mbps: tuple[float, ...] = ()
+    node_memory_gb: tuple[float, ...] = ()
+    node_storage_gb: tuple[float, ...] = ()
+    node_queue_capacity: tuple[int, ...] = ()
+
     # 任务时限与卸载
     deadline_slack_min: float = 1.8
     deadline_slack_max: float = 3.0

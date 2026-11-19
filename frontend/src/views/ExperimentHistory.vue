@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { toRaw, ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '../stores/app'
@@ -9,7 +9,7 @@ const app=useAppStore(), router=useRouter(), source=ref('fs'), runs=ref([]), sel
 async function load(){ runs.value=await api.get(source.value==='fs'?'/training/fs-runs':'/training/runs'); selected.value=null; metrics.value=null }
 async function select(row){ selected.value=row; const id=source.value==='fs' ? row.results_dir.split('/').filter(Boolean).at(-1) : row.id || row.run_id; metrics.value=await api.get(`/training/${source.value==='fs'?'fs-runs':'runs'}/${encodeURIComponent(id)}/metrics`) }
 async function sync(){ const data=await api.post('/training/sync-results'); ElMessage.success(`已导入 ${data.imported} 条，跳过 ${data.skipped} 条`) }
-function restore(){ const c=selected.value.config_json; const config=c.config || c; app.env={preset_name:'default',config:structuredClone(config)}; app.train={...app.train,...Object.fromEntries(['gat_hidden_dim','actor_hidden_dim','critic_hidden_dim','actor_learning_rate','critic_learning_rate','gamma','gae_lambda','ppo_clip','ppo_epochs','ppo_batch_size','ent_coef','eval_interval'].filter(k=>config[k] != null).map(k=>[k,config[k]])), model_type:selected.value.model_type,episodes:selected.value.episodes,seed:selected.value.seed,device:selected.value.device,threads:selected.value.threads}; router.push('/') }
+function restore(){ const c=selected.value.config_json; const config=c.config || c; app.env={preset_name:'default',config:structuredClone(toRaw(config))}; app.train={...app.train,...Object.fromEntries(['gat_hidden_dim','actor_hidden_dim','critic_hidden_dim','actor_learning_rate','critic_learning_rate','gamma','gae_lambda','ppo_clip','ppo_epochs','ppo_batch_size','ent_coef','eval_interval'].filter(k=>config[k] != null).map(k=>[k,config[k]])), model_type:selected.value.model_type,episodes:selected.value.episodes,seed:selected.value.seed,device:selected.value.device,threads:selected.value.threads}; router.push('/training') }
 function sandbox(){ router.push({path:'/sandbox',state:{checkpoint:selected.value.best_checkpoint || selected.value.last_checkpoint}}) }
 onMounted(load); watch(source,load)
 </script>

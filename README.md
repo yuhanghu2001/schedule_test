@@ -23,7 +23,7 @@ results/
     └── config.json
 ```
 
-## 前后端一键启动
+## 前端、后端和 MySQL 一键启动
 
 在仓库根目录操作。首次安装 JavaScript 依赖：
 
@@ -44,30 +44,24 @@ conda run -n gatppo python -m pip install -r requirements.txt -r backend/require
 npm start
 ```
 
-`npm run dev` 与 `npm start` 等效，在 `frontend/` 目录运行也可以。启动命令同时运行 FastAPI 和 Vite，无需手动激活 Conda 环境；按 `Ctrl+C` 同时停止两个服务，其中一个服务退出时也会停止另一个。
+`npm run dev` 与 `npm start` 等效，在 `frontend/` 目录运行也可以。启动命令依次准备项目专用 MySQL、启动 FastAPI 和 Vite，无需手动激活 Conda 环境或执行 sudo。按 `Ctrl+C` 会先停止应用服务，再关闭 MySQL，数据库文件保留；FastAPI 或 Vite 退出时也会清理本次启动的其它服务。
 
-- 浏览器打开 **http://localhost:8888**；远程访问用 `http://服务器IP:8888`。
+- 浏览器打开 **http://localhost:8888** 进入深蓝三栏系统总览；远程访问用 `http://服务器IP:8888`。
 - 后端接口文档：http://localhost:8000/docs。
 - 前端的 `/api` 和 `/ws` 请求通过 Vite 转发至本机 `8000` 端口。
 - 前端固定使用 `8888`，端口占用时会报错，避免自动切换后访问错地址。
 - `npm run build` 构建前端静态产物，不启动服务。
 
-**数据库首次配置**：MySQL 需单独安装并启动，一键命令只负责前后端进程。使用管理员账户执行以下 SQL（将示例密码替换为自己的密码）：
+**MySQL 自动准备**：首次 `npm start` 通过 conda-forge 安装固定版本 MySQL 8.4.2 到 `.local/mysql-env/`（需要联网，不修改 `gatppo` 依赖），初始化 `.local/mysql-data/`，生成随机数据库密码及 `backend/.env`，自动创建 `schedule_test`、应用账户和 `backend/schema.sql` 的五张表。当前机器已完成安装和初始化，后续启动复用已有文件。
 
-```sql
-CREATE DATABASE schedule_test CHARACTER SET utf8mb4;
-CREATE USER 'schedule'@'127.0.0.1' IDENTIFIED BY 'your_password';
-GRANT ALL PRIVILEGES ON schedule_test.* TO 'schedule'@'127.0.0.1';
-```
+- MySQL 仅监听 `127.0.0.1:3306`；无需单独安装系统服务。
+- 应用连接参数：`backend/.env`；本地管理员连接文件：`.local/mysql-admin.cnf`。两者权限为 `600`，不会输出密码。
+- 数据文件：`.local/mysql-data/`；数据库日志：`.local/mysql.log`。数据库目录、独立 Conda 环境和凭据均已被 Git 忽略。
+- 停止和重启保留库表及记录；备份时保留 `.local/` 和 `backend/.env`，不要单独删除连接凭据。
+- 访问 http://localhost:8888/api/health，`db_connected: true` 表示数据库连接成功。
+- 已有进程占用端口时，在原启动终端按 `Ctrl+C` 后再运行，启动脚本不会杀掉其它实例。
 
-然后在仓库根目录执行并编辑 `backend/.env`，设置对应的 `MYSQL_PASSWORD`：
-
-```bash
-cp backend/.env.example backend/.env
-mysql -h 127.0.0.1 -u schedule -p schedule_test < backend/schema.sql
-```
-
-访问 http://localhost:8888/api/health，`db_connected: true` 表示数据库连接成功。未连接 MySQL 时页面和内存仿真可以启动，保存环境配置、训练记录和实验档案等数据库功能不可用。
+总览支持真实拓扑预览、创建会话、单任务/整时隙推进、自动推演、暂停、重置、选择 Checkpoint、节点详情和任务路径高亮。主导航为“系统总览、节点管理”，训练工作台和实验记录导航入口已移除，原页面路由仍保留；完整沙盘 `/sandbox` 与算法评估 `/compare` 保留原路由。节点管理可编辑端侧无线速率、边缘/云端算力、内存、存储、队列容量和服务部署，保存到本机环境草稿后用于新建推演及训练。组件、指标口径及实际截图见 [上位机系统说明](docs/07_上位机可视化调度系统设计.md#5-深蓝监控总览2026-11-19)。
 
 ## 训练设备与线程
 
