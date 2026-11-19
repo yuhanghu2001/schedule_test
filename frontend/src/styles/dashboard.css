@@ -687,7 +687,7 @@ a {
   color: #a2bed7;
 }
 .focus-resources .utilization,
-.focus-resources .node-status,
+.focus-resources .task-generation,
 .focus-topology .network-panel {
   border-color: #50d4ff;
 }
@@ -1780,10 +1780,18 @@ a {
   flex-direction: column;
   position: relative;
   overflow: hidden;
+  color: #e4f4ff;
+}
+.topology-monitor,
+.overview-network-scene {
   background:
     radial-gradient(ellipse at 50% 17%, #07335a88, transparent 48%),
     linear-gradient(180deg, #03152d, #031a36 68%, #02152d);
-  color: #e4f4ff;
+}
+.overview-network-scene {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .monitor-scene-wrap {
   flex: 1;
@@ -1822,11 +1830,13 @@ a {
 }
 .network-monitor-scene .monitor-network-link {
   fill: none;
-  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-width: 2.2;
   stroke-opacity: 0.8;
 }
 .network-monitor-scene .monitor-network-link.cloud {
-  stroke-width: 3;
+  stroke-width: 2.5;
   filter: drop-shadow(0 0 2px #008cff);
 }
 .network-monitor-scene .monitor-network-link.edge {
@@ -1841,7 +1851,7 @@ a {
   stroke: #00d9ff;
   stroke-width: 1.6;
   stroke-dasharray: 6 5;
-  stroke-opacity: 0.55;
+  stroke-opacity: 0.4;
 }
 .network-monitor-scene .monitor-network-link:hover,
 .network-monitor-scene .monitor-radio-links path:hover {
@@ -1850,6 +1860,7 @@ a {
 }
 .network-monitor-scene .monitor-current-path path {
   fill: none;
+  stroke-linejoin: round;
   stroke: #66ff83;
   stroke-width: 4;
   filter: drop-shadow(0 0 4px #56ff7a);
@@ -1910,11 +1921,32 @@ a {
   stroke: #39e5ff;
   stroke-width: 2;
 }
+.network-monitor-scene .monitor-cloud-label {
+  text-anchor: middle;
+  fill: #ecf7ff;
+  font-size: 26px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #032042;
+  stroke-width: 5px;
+}
 .network-monitor-scene .monitor-terminal-title {
   text-anchor: middle;
   fill: #e9f7ff;
   font-size: 20px;
   font-weight: 700;
+}
+.network-monitor-scene--compact .monitor-edge-title {
+  font-size: 28px;
+}
+.network-monitor-scene--compact .monitor-terminal-title {
+  font-size: 26px;
+}
+.network-monitor-scene--compact .monitor-resource-profile {
+  font-size: 20px;
+}
+.network-monitor-scene--compact .monitor-cloud-label {
+  font-size: 32px;
 }
 .network-monitor-scene .terminal-platform {
   stroke: #069fdb;
@@ -1949,5 +1981,114 @@ a {
   }
   .monitor-scene-wrap {
     min-height: 700px;
+  }
+}
+
+/* Task generation replaces the overview's node status list. */
+.overview .run-overview {
+  flex: 0 0 auto;
+}
+.overview .run-overview .overview-body {
+  flex: 0 0 auto;
+}
+.task-generation {
+  flex: 1.4;
+}
+.task-generation-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 10px;
+  min-height: 0;
+  overflow: auto;
+}
+.task-generation .task-totals {
+  flex-shrink: 0;
+}
+.task-generation .distribution {
+  flex-shrink: 0;
+}
+.task-generation-progress {
+  display: flex;
+  justify-content: space-between;
+  color: #a7c8e4;
+  font-size: 12px;
+  padding: 0 4px;
+}
+.task-generation-progress b {
+  color: #41e7f3;
+  margin-left: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.pending-task {
+  border-top: 1px solid #19577e;
+  padding-top: 10px;
+}
+.pending-task h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.pending-task h3 small {
+  color: #41e7f3;
+  font-size: 13px;
+}
+.pending-task dl {
+  margin: 0;
+}
+.pending-task dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 3px;
+  border-bottom: 1px solid #123b60;
+  font-size: 12px;
+}
+.pending-task dt {
+  color: #99bdd9;
+}
+.pending-task dd {
+  margin: 0;
+  color: #dcecff;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1700px) {
+  .task-generation-body {
+    gap: 9px;
+    padding: 10px 8px;
+  }
+  .task-generation .task-totals {
+    padding: 8px 4px;
+  }
+  .task-generation .distribution h3 {
+    font-size: 13px;
+    padding: 8px;
+  }
+  .task-generation .distribution-bars {
+    gap: 3px;
+    padding: 10px 6px;
+  }
+  .task-generation .distribution-bars > div {
+    font-size: 10px;
+  }
+  .pending-task {
+    padding-top: 8px;
+  }
+  .pending-task h3 {
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  .pending-task dl > div {
+    font-size: 11px;
+    padding: 4px 2px;
+  }
+}
+@media (max-width: 850px) {
+  .task-generation {
+    flex: auto;
+    max-height: 540px;
   }
 }

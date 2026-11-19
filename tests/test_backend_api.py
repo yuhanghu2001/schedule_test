@@ -46,7 +46,7 @@ class BackendTests(TestCase):
         self.assertIsInstance(health["db_connected"], bool)
         self.assertEqual(health["results_dir"], str(self.temp_dir))
         self.assertEqual(engine.dialect.name, "mysql")
-        origin = "http://localhost:5173"
+        origin = "http://localhost:8888"
         cors = self.client.options("/api/env/preview", headers={
             "Origin": origin, "Access-Control-Request-Method": "POST",
         })
@@ -75,7 +75,7 @@ class BackendTests(TestCase):
         self.assertEqual(response.status_code, 200)
         preview = response.json()
         self.assertEqual([node["kind"] for node in preview["nodes"]], ["edge", "edge", "cloud"])
-        self.assertEqual([t["access_edge"] for t in preview["terminals"]], [0, 1, 0])
+        self.assertEqual([t["access_edge"] for t in preview["terminals"]], [0, 0, 1])
         self.assertEqual(preview["metrics"]["tasks"], 0)
         self.assertEqual(preview["current_task"]["candidates"][-1]["destination"], -2)
 
@@ -150,7 +150,7 @@ class BackendTests(TestCase):
         self.assertRegex(run_dir.name, r"^\d{8}_\d{6}$")
         self.assertEqual({p.name for p in run_dir.iterdir()}, {
             "train_config.json", "train_metrics.jsonl", "evaluation_metrics.jsonl",
-            "best_flat_ppo.pt", "last_flat_ppo.pt", "training_metrics.png", "evaluation_metrics.png",
+            "best_ppo.pt", "last_ppo.pt", "training_metrics.png", "evaluation_metrics.png",
         })
         self.assertEqual(self.client.get("/api/training/runs").json()[0]["id"], run_id)
         self.assertEqual(self.client.get("/api/training/fs-runs").json()[0]["current_episode"], 1)

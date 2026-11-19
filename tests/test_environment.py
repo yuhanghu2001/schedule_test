@@ -29,7 +29,7 @@ class EnvironmentDynamicsTest(unittest.TestCase):
         task = Task(0, 0, 0, .1, .01, .1, 1., .1, .1, 1)
         env.tasks = [task]
         env.observe()
-        cloud_action = next(a for a in env.actions if a.destination == env.cloud)
+        cloud_action = env._candidate(task, env.cloud, 0, (0, env.cloud))
         env.background[0, env.cloud] = .2
         env.background[env.cloud, 0] = .8
         env.execution_rng = np.random.default_rng(7)

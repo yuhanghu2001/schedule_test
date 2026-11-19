@@ -18,6 +18,9 @@ class Config:
     # 动态拓扑与链路
     topology_period_slots: int = 5
     undirected_edge_links: int = 18
+    cloud_gateway_count: int = 0  # 0 保留旧配置全直连；三套预设使用前 4 个边缘作网关
+    terminal_access_mode: str = "cyclic"  # 旧配置按编号取模；当前预设使用示意位置最近邻
+    edge_topology: str = "ring"  # 旧配置保留环和随机弦；当前预设使用八邻接网格
     max_hops: int = 4
     k_routes_per_destination: int = 3
     link_flap_prob: float = 0.12
@@ -32,8 +35,8 @@ class Config:
     congestion_max: float = 0.6
     congestion_noise: float = 0.15
     congestion_realized_max: float = 0.95
-    link_rate_min_mbps: float = 500.0
-    link_rate_max_mbps: float = 2000.0
+    link_rate_min_mbps: float = 120.0
+    link_rate_max_mbps: float = 360.0
     cloud_rate_min_mbps: float = 50.0
     cloud_rate_max_mbps: float = 200.0
     radio_rate_min_mbps: float = 60.0
@@ -91,9 +94,9 @@ class Config:
     reward_penalty_conditional_reject: float = 1.0
     reward_delay_ref: float = 1.0
     reward_energy_ref: float = 3.0
-    # 随机非拒绝策略(1042—1046)：D̄_rand=0.08608214，t̄_rand=0.82071578s。
-    reward_variance_ref: float = 0.0058
-    reward_version: str = "v6_dynamic_edge_only"
+    # 随机非拒绝策略(1042—1046)：D̄_rand=0.09128975，t̄_rand=0.85385720s。
+    reward_variance_ref: float = 0.0059
+    reward_version: str = "v7_edge_bottleneck"
     observation_version: str = "v4_edge_only_4d_edges"
 
     # GAT-PPO 网络与训练
@@ -115,18 +118,20 @@ class Config:
 
 
 def load_config(name: str = "default") -> Config:
-    """返回Python场景配置；所有完整默认值都在Config中。"""
+    """返回 Python 场景配置；预设启用八邻接、网关上云和最近邻接入。"""
+    cfg = replace(Config(), cloud_gateway_count=4, terminal_access_mode="nearest",
+                  edge_topology="eight_neighbor", undirected_edge_links=29)
     if name == "default":
-        return Config()
+        return cfg
     if name == "high_congestion":
         return replace(
-            Config(), topology_period_slots=4, undirected_edge_links=16,
+            cfg, topology_period_slots=4,
             congestion_min=0.45, congestion_max=0.8, arrival_rate=24.0,
             link_flap_prob=0.18, link_spike_prob=0.25, link_rate_fluctuation=0.35,
         )
     if name == "small_smoke":
         return replace(
-            Config(), episode_slots=4, arrival_rate=5.0,
+            cfg, episode_slots=4, arrival_rate=5.0,
             topology_period_slots=2, ppo_batch_size=16,
         )
     raise ValueError(f"未知配置名称: {name}")

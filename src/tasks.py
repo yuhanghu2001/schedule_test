@@ -34,6 +34,7 @@ def sample_tasks(
     min_edge_compute_gflops: float,
     deadline_slack_min: float,
     deadline_slack_max: float,
+    access_edges: np.ndarray | None = None,
 ) -> list[Task]:
     tasks = []
     hotspot_count = int(np.ceil(hotspot_fraction * terminals))
@@ -57,7 +58,7 @@ def sample_tasks(
             )
             tasks.append(Task(
                 source=source,
-                access_edge=source % edges,
+                access_edge=source % edges if access_edges is None else int(access_edges[source]),
                 kind=int(rng.integers(5)),
                 data_mb=data_mb,
                 output_mb=output_mb,

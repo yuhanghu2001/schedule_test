@@ -12,7 +12,7 @@ from src.config import Config, load_config
 from src.environment import EdgeEnv, model_environment, shuffle_graph_observation, ShuffledGraphEnv
 from src.models.gat import GATEncoder
 from src.models.policy import GATPPO, MODEL_NAMES
-from src.topology import _activate_link
+from src.topology import _activate_link, edge_pairs
 
 from ..config import REPO_ROOT
 
@@ -80,6 +80,8 @@ def build_model(cfg, model_type, checkpoint=None, *, inference=False):
                 model.gat.register_forward_pre_hook(
                     lambda _, args: (args[0], args[1], args[2][..., :edge_dim])
                 )
+            if "gat.skip.weight" not in state:
+                model.gat.layer1.norm = model.gat.layer2.norm = model.gat.skip = None
             model.load_state_dict(state, assign=inference)
     return model.eval() if inference else model
 
@@ -116,6 +118,7 @@ def node_snapshot(env, node, active_task_ids):
         "id": node,
         "label": node_label(env, node),
         "kind": "cloud" if cloud else "edge",
+        "position": env.node_positions[node].tolist(),
         "profile": "cloud" if cloud else profile,
         "speed": speed.tolist(),
         "resource_used": env.slot_resource_used[node].tolist(),
@@ -216,7 +219,8 @@ def serialize_env_snapshot(env, history, last_decision=None):
                   for node in range(env.n_graph_nodes)],
         "terminals": [
             {"id": terminal, "label": f"端侧 {terminal}",
-             "access_edge": terminal % env.cloud,
+             "access_edge": int(env.access_edges[terminal]),
+             "position": env.terminal_positions[terminal].tolist(),
              "radio_rate_mbps": float(rate)}
             for terminal, rate in enumerate(env.radio_rates)
         ],
@@ -350,7 +354,11 @@ class SimManager:
                 env.flapped_edges.append(pair)
             if active is True and not env.adj[a, b]:
                 edge_adj = env.adj[:env.cloud, :env.cloud]
-                if np.count_nonzero(np.triu(edge_adj, k=1)) >= env.cfg.undirected_edge_links:
+                allowed = edge_pairs(env.cfg)
+                if pair not in allowed:
+                    raise ValueError("八邻接模式只能连接上下左右及四个对角的相邻节点")
+                limit = len(allowed) if env.cfg.edge_topology == "eight_neighbor" else env.cfg.undirected_edge_links
+                if np.count_nonzero(np.triu(edge_adj, k=1)) >= limit:
                     raise ValueError("活跃边缘链路已达配置上限")
                 if pair in session.suspended_links:
                     values = session.suspended_links.pop(pair)

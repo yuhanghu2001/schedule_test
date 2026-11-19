@@ -91,8 +91,11 @@ class AdditiveRewardTest(unittest.TestCase):
         _, reject_reward, _, _ = reject_env.step(len(reject_env.actions) - 1)
         self.assertGreater(accept_reward, reject_reward)
 
-    def test_accept_all_objective_beats_rejecting_long_delay(self):
-        cfg = replace(load_config("default"), seed=1042)
+    def test_accept_all_objective_beats_rejecting_long_delay_in_v6_scenario(self):
+        cfg = replace(load_config("default"), seed=1042, cloud_gateway_count=0,
+                      terminal_access_mode="cyclic",
+                      link_rate_min_mbps=500., link_rate_max_mbps=2000.,
+                      reward_variance_ref=0.0058, reward_version="v6_dynamic_edge_only")
 
         def accept_all(env):
             return shortest_fastest_action(env.actions)

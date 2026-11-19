@@ -1,57 +1,36 @@
 <script setup>
 import { computed, useId } from 'vue'
 import NodeGlyph from './NodeGlyph.vue'
-const props = defineProps({ snapshot: Object })
+const props = defineProps({
+  snapshot: Object,
+  selected: Object,
+  compact: Boolean,
+})
 const emit = defineEmits(['select-node'])
 const id = useId().replace(/:/g, '')
-const edges = computed(
-  () => props.snapshot?.nodes.filter((n) => n.kind === 'edge') || [],
+const nodes = computed(() =>
+  props.snapshot
+    ? [
+        ...props.snapshot.nodes.map((n) => ({
+          ...n,
+          key: 'n' + n.id,
+          x: n.position[0],
+          y: n.position[1],
+        })),
+        ...props.snapshot.terminals.map((t) => ({
+          ...t,
+          kind: 'terminal',
+          key: 't' + t.id,
+          x: t.position[0],
+          y: t.position[1],
+        })),
+      ]
+    : [],
 )
-const columns = computed(() => Math.min(4, edges.value.length))
-const rows = computed(() => Math.ceil(edges.value.length / columns.value))
-const nodes = computed(() => {
-  if (!props.snapshot) return []
-  const compute = props.snapshot.nodes.map((n) => {
-    const index = edges.value.findIndex((e) => e.id === n.id)
-    return {
-      ...n,
-      key: 'n' + n.id,
-      x:
-        n.kind === 'cloud'
-          ? 900
-          : columns.value === 1
-            ? 900
-            : 300 + ((index % columns.value) * 1200) / (columns.value - 1),
-      y:
-        n.kind === 'cloud'
-          ? 120
-          : rows.value === 1
-            ? 490
-            : 350 +
-              (Math.floor(index / columns.value) * 315) / (rows.value - 1),
-    }
-  })
-  const terminals = [...props.snapshot.terminals].sort(
-    (a, b) =>
-      (a.access_edge % columns.value) - (b.access_edge % columns.value) ||
-      a.access_edge - b.access_edge ||
-      a.id - b.id,
-  )
-  return [
-    ...compute,
-    ...terminals.map((t, i) => ({
-      ...t,
-      kind: 'terminal',
-      key: 't' + t.id,
-      x: 60 + (i * 1680) / Math.max(1, terminals.length - 1),
-      y: 800,
-    })),
-  ]
-})
 const map = computed(() =>
   Object.fromEntries(nodes.value.map((n) => [n.key, n])),
 )
-const decision = computed(() => props.snapshot?.last_decision)
+const decision = computed(() => props.selected || props.snapshot?.last_decision)
 const route = computed(() => {
   if (!decision.value || decision.value.destination < 0) return []
   const keys = [
@@ -65,31 +44,36 @@ const isActive = (n) =>
   (n.kind === 'terminal'
     ? decision.value.source === n.id
     : decision.value.path.includes(n.id))
+function boundary(node, target) {
+  const dx = target.x - node.x,
+    dy = target.y - node.y
+  const scale = 1 / Math.max(Math.abs(dx) / 42, Math.abs(dy) / 50)
+  return { x: node.x + dx * scale, y: node.y + dy * scale }
+}
+function networkPath(a, b) {
+  let points
+  if (a.kind === 'cloud' || b.kind === 'cloud') {
+    const cloud = a.kind === 'cloud' ? a : b,
+      edge = a.kind === 'cloud' ? b : a
+    const port = { x: cloud.x + (edge.x - cloud.x) * 0.14, y: cloud.y + 90 }
+    points = [port, boundary(edge, port)]
+    if (a.kind !== 'cloud') points.reverse()
+  } else points = [boundary(a, b), boundary(b, a)]
+  return points.map((p, i) => `${i ? 'L' : 'M'}${p.x} ${p.y}`).join(' ')
+}
 function physicalPath(link) {
-  const a = map.value['n' + link.source],
-    b = map.value['n' + link.target]
-  if (link.kind === 'cloud')
-    return `M${b.x} ${b.y + 90} Q${a.x} ${a.y - 150} ${a.x} ${a.y - 62}`
-  if (a.y === b.y && Math.abs(a.x - b.x) > 450)
-    return `M${a.x} ${a.y} Q${(a.x + b.x) / 2} ${a.y - 110} ${b.x} ${b.y}`
-  return `M${a.x} ${a.y} L${b.x} ${b.y}`
+  return networkPath(map.value['n' + link.source], map.value['n' + link.target])
 }
 function radioPath(t) {
   const a = map.value['n' + t.access_edge],
     b = map.value['t' + t.id]
-  return `M${a.x + 30} ${a.y + 38} C${a.x + 120} ${a.y + 100},${b.x} 690,${b.x} ${b.y - 32}`
+  const side = Math.sign(b.x - a.x) || 1
+  return `M${a.x + side * 42} ${a.y + 24} C${a.x + side * 120} ${a.y + 100},${b.x} ${b.y - 100},${b.x} ${b.y - 32}`
 }
 function currentPath(a, b) {
-  if (a.kind === 'terminal')
-    return `M${a.x} ${a.y - 32} C${a.x} 690,${b.x + 120} ${b.y + 100},${b.x + 30} ${b.y + 38}`
-  if (b.kind === 'cloud')
-    return `M${a.x} ${a.y - 78} Q${a.x} ${a.y - 150} ${b.x} ${b.y + 92}`
-  if (a.kind === 'cloud')
-    return `M${a.x} ${a.y + 92} Q${b.x} ${b.y - 150} ${b.x} ${b.y - 78}`
-  const dx = b.x - a.x,
-    dy = b.y - a.y
-  const inset = 1 / Math.sqrt((dx / 148) ** 2 + (dy / 82) ** 2)
-  return `M${a.x + dx * inset} ${a.y + dy * inset} L${b.x - dx * inset} ${b.y - dy * inset}`
+  if (a.kind !== 'terminal') return networkPath(a, b)
+  const side = Math.sign(a.x - b.x) || 1
+  return `M${a.x} ${a.y - 32} C${a.x} ${a.y - 100},${b.x + side * 120} ${b.y + 100},${b.x + side * 42} ${b.y + 24}`
 }
 const nodeName = (n) =>
   n.kind === 'cloud' ? 'C0' : (n.kind === 'terminal' ? 'U' : 'E') + n.id
@@ -106,8 +90,9 @@ function linkColor(l) {
 <template>
   <svg
     class="network-monitor-scene"
+    :class="{ 'network-monitor-scene--compact': compact }"
     viewBox="0 0 1800 900"
-    preserveAspectRatio="none"
+    :preserveAspectRatio="compact ? 'xMidYMid meet' : 'none'"
     aria-label="真实云边端网络拓扑"
   >
     <defs>
@@ -315,6 +300,7 @@ function linkColor(l) {
             :href="`#${id}-server`"
             :transform="`translate(${n.x + (i - 2) * 40} ${n.y - 7}) scale(${s})`"
           />
+          <text :x="n.x" :y="n.y + 120" class="monitor-cloud-label">C0</text>
         </template>
         <template v-else-if="n.kind === 'edge'">
           <ellipse

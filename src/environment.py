@@ -4,7 +4,7 @@ import numpy as np
 
 from .config import Config
 from .tasks import sample_tasks
-from .topology import fluctuate_rates, fluctuate_topology, make_topology, simple_routes
+from .topology import fluctuate_rates, fluctuate_topology, make_topology, simple_routes, node_positions
 from .continuous import allocate_compute, choose_uplink_power
 
 
@@ -44,6 +44,12 @@ class EdgeEnv:
         self.rng = np.random.default_rng(cfg.seed)
         self.cloud = cfg.n_edges
         self.n_graph_nodes = cfg.n_edges + 1
+        self.node_positions, self.terminal_positions = node_positions(cfg.n_edges, cfg.n_terminals)
+        self.access_edges = np.arange(cfg.n_terminals) % cfg.n_edges
+        if cfg.terminal_access_mode == "nearest":
+            distances = ((self.terminal_positions[:, None, :]
+                          - self.node_positions[None, :cfg.n_edges, :]) ** 2).sum(axis=2)
+            self.access_edges = distances.argmin(axis=1)
         edge_ids = np.arange(cfg.n_edges)
         edge_speeds = np.asarray(cfg.edge_speed_matrix)[edge_ids % len(cfg.edge_speed_matrix)]
         self.speed = np.vstack((edge_speeds, cfg.cloud_speed)).astype(np.float32)
@@ -81,6 +87,7 @@ class EdgeEnv:
             min_edge_compute_gflops=float(self.speed[:self.cloud].min()),
             deadline_slack_min=c.deadline_slack_min,
             deadline_slack_max=c.deadline_slack_max,
+            access_edges=self.access_edges,
         )
         self.radio_channel_gain = (
             2.0 ** (self.radio_rates / c.radio_bandwidth_mhz) - 1.0
@@ -337,12 +344,16 @@ class EdgeEnv:
         actions = []
         if task.allow_offload:
             source = task.access_edge
-            for destination in range(self.cfg.n_edges):
-                if not self.service_deployment[destination, task.kind]:
+            for destination in range(self.n_graph_nodes):
+                cloud = destination == self.cloud
+                if not cloud and not self.service_deployment[destination, task.kind]:
                     continue
-                # 同一接入边缘服务器不需要边缘间多跳。
-                routes = [(source,)] if destination == source else simple_routes(
-                    self.adj, source, destination, self.cfg.max_hops)
+                if cloud and self.cfg.cloud_gateway_count == 0:
+                    # 历史配置保持源边缘直接上云，保证旧 checkpoint 可复现。
+                    routes = [(source, self.cloud)] if self.adj[source, self.cloud] else []
+                else:
+                    routes = [(source,)] if destination == source else simple_routes(
+                        self.adj, source, destination, self.cfg.max_hops + int(cloud))
                 routes.sort(key=lambda p: sum(
                     8 * task.data_mb / (self.rates[a, b] * (1 - self.background[a, b]))
                     for a, b in zip(p, p[1:])))
@@ -352,12 +363,6 @@ class EdgeEnv:
                             action = self._candidate(task, destination, q, path)
                             if action is not None:
                                 actions.append(action)
-            # 云端经接入边缘节点的广域链路转发。
-            for q in range(3):
-                if self.adj[source, self.cloud] and self.support[q, task.kind]:
-                    action = self._candidate(task, self.cloud, q, (source, self.cloud))
-                    if action is not None:
-                        actions.append(action)
         actions.append(Action(-2, -1, (), 0., 0., 0.))
         return actions
 
@@ -402,7 +407,7 @@ class EdgeEnv:
             paths[a, list(route)] = 1 / len(route)
             cand[a, :3] = [float(reject), 0.0, float(action.destination == self.cloud)]
             cand[a, 3:6] = [float(action.resource == q) for q in range(3)]
-            edge_hops = max(0, len(route) - 1) if 0 <= action.destination < self.cloud else 0
+            edge_hops = max(0, len(route) - 1 - int(action.destination == self.cloud))
             cand[a, 6] = edge_hops / self.cfg.max_hops
             cand[a, 7] = action.delay / self.cfg.reward_delay_ref
             cand[a, 8] = action.energy / 10
@@ -524,8 +529,7 @@ class EdgeEnv:
             self.sum_priority_delay += task.priority * action.delay
             self.sum_priority += task.priority
             self.total_energy += action.energy
-            if 0 <= action.destination < self.cloud:
-                self.total_hops += max(0, len(action.path) - 1)
+            self.total_hops += max(0, len(action.path) - 1 - int(action.destination == self.cloud))
             self.total_path_length += len(action.path)
             self._rebuild_occupancy()
             for a, b in zip(action.path, action.path[1:]):

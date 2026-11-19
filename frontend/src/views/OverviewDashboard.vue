@@ -3,10 +3,9 @@ import { ref, computed, toRaw, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import api from '../api/client'
-import TopologyGraph from '../components/TopologyGraph.vue'
+import NetworkMonitorScene from '../components/NetworkMonitorScene.vue'
 import NodeResourcePanel from '../components/NodeResourcePanel.vue'
 import TaskFlowTable from '../components/TaskFlowTable.vue'
-import NodeGlyph from '../components/NodeGlyph.vue'
 import ResourceTrend from '../components/ResourceTrend.vue'
 const app = useAppStore(),
   route = useRoute()
@@ -54,14 +53,6 @@ const completed = computed(
       (t) => t.accepted && t.completed,
     ).length,
 )
-const cards = computed(() =>
-  snapshot.value
-    ? [
-        ...snapshot.value.nodes,
-        ...snapshot.value.terminals.map((n) => ({ ...n, kind: 'terminal' })),
-      ]
-    : [],
-)
 const environment = () =>
   preset.value === 'draft' ? app.env : { preset_name: preset.value, config: {} }
 const strategy = computed(() =>
@@ -70,7 +61,6 @@ const strategy = computed(() =>
     : policyNames[activePolicy.value || policy.value],
 )
 const fmt = (v, n = 2) => (v == null ? '—' : Number(v).toFixed(n))
-const percentage = (node, i) => (100 * node.resource_used[i]) / node.speed[i]
 function receive(data, reset = false) {
   snapshot.value = data
   selectedPath.value = null
@@ -217,41 +207,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
-          <div class="task-totals">
-            <span
-              >本轮任务总数 <b>{{ snapshot?.total_tasks ?? '—' }}</b></span
-            ><span
-              >按期完成 <b>{{ completed }}</b></span
-            >
-          </div>
-          <div class="distribution">
-            <h3>
-              业务任务分布（5 类）<small
-                >已调度 {{ snapshot?.task_index || 0 }} 个</small
-              >
-            </h3>
-            <div class="distribution-bars">
-              <div v-for="(name, i) in taskNames" :key="name">
-                <span
-                  :style="{
-                    color: [
-                      '#a49eff',
-                      '#ffc36c',
-                      '#51dfb3',
-                      '#68adff',
-                      '#8782ff',
-                    ][i],
-                  }"
-                  >{{ name }}</span><b
-                  >{{
-                    snapshot?.task_index
-                      ? fmt((taskCounts[i] / snapshot.task_index) * 100, 1)
-                      : '0.0'
-                  }}%</b
-                >
-              </div>
-            </div>
-          </div>
         </div>
       </section>
       <section class="monitor-panel utilization">
@@ -358,11 +313,14 @@ onBeforeUnmount(() => {
             >重置</el-button
           >
         </div>
-        <TopologyGraph
-          :snapshot="snapshot"
-          :selected="selectedPath"
-          @select-node="inspect"
-        />
+        <div class="overview-network-scene">
+          <NetworkMonitorScene
+            :snapshot="snapshot"
+            :selected="selectedPath"
+            compact
+            @select-node="inspect"
+          />
+        </div>
       </section>
       <section class="monitor-panel dispatch-panel">
         <h2 class="monitor-title">
@@ -376,61 +334,106 @@ onBeforeUnmount(() => {
       </section>
     </div>
     <div class="dashboard-right">
-      <section class="monitor-panel node-status">
+      <section class="monitor-panel task-generation">
         <h2 class="monitor-title">
-          计算节点状态<small>全部 {{ cards.length }} 个节点</small>
-        </h2>
-        <div class="node-card-list">
-          <button
-            v-for="node in cards"
-            :key="node.kind + node.id"
-            class="status-node-card"
-            @click="inspect(node)"
+          任务产生<small
+            >{{ snapshot?.terminals.length ?? '—' }} 个任务源</small
           >
-            <NodeGlyph :kind="node.kind" />
-            <div class="status-node-info">
-              <div class="status-node-title">
-                <strong
-                  >{{
-                    node.kind === 'cloud'
-                      ? 'C0'
-                      : (node.kind === 'terminal' ? 'U' : 'E') +
-                        String(node.id).padStart(2, '0')
-                  }}
-                  <em
-                    >（{{
-                      node.kind === 'cloud'
-                        ? '云端'
-                        : node.kind === 'terminal'
-                          ? '端侧'
-                          : node.profile === 'balanced'
-                            ? '中继'
-                            : node.profile
-                    }}）</em
-                  ></strong
-                ><span class="good">在线</span>
-              </div>
-              <div
-                v-for="(r, i) in node.kind === 'terminal' ? [] : resources"
-                :key="r"
-                class="node-meter"
+        </h2>
+        <div class="task-generation-body">
+          <div class="task-totals">
+            <span
+              >本轮任务总数 <b>{{ snapshot?.total_tasks ?? '—' }}</b></span
+            ><span
+              >按期完成 <b>{{ completed }}</b></span
+            >
+          </div>
+          <div class="distribution">
+            <h3>
+              已调度业务分布（5 类）<small
+                >已调度 {{ snapshot?.task_index || 0 }} 个</small
               >
-                <span>{{ r }}</span>
-                <div class="meter">
-                  <i
-                    :class="'resource-' + i"
-                    :style="{ width: percentage(node, i) + '%' }"
-                  ></i>
-                </div>
-                <span>{{ fmt(percentage(node, i), 0) }}%</span>
+            </h3>
+            <div class="distribution-bars">
+              <div v-for="(name, i) in taskNames" :key="name">
+                <span
+                  :style="{
+                    color: [
+                      '#a49eff',
+                      '#ffc36c',
+                      '#51dfb3',
+                      '#68adff',
+                      '#8782ff',
+                    ][i],
+                  }"
+                  >{{ name }}</span><b
+                  >{{
+                    snapshot?.task_index
+                      ? fmt((taskCounts[i] / snapshot.task_index) * 100, 1)
+                      : '0.0'
+                  }}%</b
+                >
               </div>
-              <p v-if="node.kind === 'terminal'" class="terminal-status">
-                接入 E{{ node.access_edge }} ·
-                {{ fmt(node.radio_rate_mbps, 1) }} Mbps<br />端侧任务源 ·
-                不执行本地计算
-              </p>
             </div>
-          </button>
+          </div>
+          <div class="task-generation-progress">
+            <span
+              >已调度 <b>{{ snapshot?.task_index ?? '—' }}</b></span
+            >
+            <span
+              >待调度
+              <b>{{
+                snapshot ? snapshot.total_tasks - snapshot.task_index : '—'
+              }}</b></span
+            >
+          </div>
+          <div class="pending-task">
+            <h3>
+              当前待调度任务<small v-if="snapshot?.current_task"
+                >T-{{ snapshot.current_task.task_index }}</small
+              >
+            </h3>
+            <dl v-if="snapshot?.current_task">
+              <div>
+                <dt>业务类型</dt>
+                <dd>{{ snapshot.current_task.kind_name }}</dd>
+              </div>
+              <div>
+                <dt>源端 / 接入</dt>
+                <dd>
+                  U{{ snapshot.current_task.source }} / E{{
+                    snapshot.current_task.access_edge
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>输入 / 输出</dt>
+                <dd>
+                  {{ fmt(snapshot.current_task.data_mb) }} /
+                  {{ fmt(snapshot.current_task.output_mb) }} MB
+                </dd>
+              </div>
+              <div>
+                <dt>计算量</dt>
+                <dd>{{ fmt(snapshot.current_task.compute_gflop) }} GFLOP</dd>
+              </div>
+              <div>
+                <dt>任务时限</dt>
+                <dd>{{ fmt(snapshot.current_task.deadline_s) }} s</dd>
+              </div>
+              <div>
+                <dt>到达时隙 / 优先级</dt>
+                <dd>
+                  {{ snapshot.current_task.slot }} / P{{
+                    snapshot.current_task.priority
+                  }}
+                </dd>
+              </div>
+            </dl>
+            <p v-else class="muted">
+              {{ snapshot?.done ? '本轮任务已全部调度' : '正在加载任务' }}
+            </p>
+          </div>
         </div>
       </section>
       <section class="monitor-panel strategy-panel">

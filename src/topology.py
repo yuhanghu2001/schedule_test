@@ -4,6 +4,27 @@ from itertools import combinations
 import numpy as np
 
 
+def node_positions(n_edges, n_terminals):
+    """与监控大屏共用的固定示意坐标，用于唯一最近邻接入。"""
+    columns = min(4, n_edges)
+    rows = (n_edges + columns - 1) // columns
+    positions = []
+    for index in range(n_edges):
+        if index < columns:
+            column, row = index, 0
+        else:
+            offset = index - columns
+            column = columns - 1 - offset // (rows - 1)
+            row = (1 + offset % (rows - 1) if (columns - 1 - column) % 2 == 0
+                   else rows - 1 - offset % (rows - 1))
+        x = 900.0 if columns == 1 else 300.0 + column * 1200.0 / (columns - 1)
+        y = 490.0 if rows == 1 else 350.0 + row * 330.0 / (rows - 1)
+        positions.append((x, y))
+    terminals = [(60.0 + terminal * 1680.0 / max(1, n_terminals - 1), 815.0)
+                 for terminal in range(n_terminals)]
+    return np.array(positions + [(900.0, 120.0)]), np.array(terminals)
+
+
 def _activate_link(rng, cfg, a, b, adj, base_rates, base_background, prop, forward_power):
     if b == cfg.n_edges:
         rate = rng.uniform(cfg.cloud_rate_min_mbps, cfg.cloud_rate_max_mbps)
@@ -20,23 +41,39 @@ def _activate_link(rng, cfg, a, b, adj, base_rates, base_background, prop, forwa
     forward_power[a, b], forward_power[b, a] = rng.uniform(2., 8., 2)
 
 
+def edge_pairs(cfg):
+    """八邻接模式只允许同一网格中的相邻节点建立物理链路。"""
+    pairs = set(combinations(range(cfg.n_edges), 2))
+    if cfg.edge_topology == "eight_neighbor":
+        positions, _ = node_positions(cfg.n_edges, 0)
+        xs, ys = sorted(set(positions[:-1, 0])), sorted(set(positions[:-1, 1]))
+        cells = [(xs.index(x), ys.index(y)) for x, y in positions[:-1]]
+        pairs = {(a, b) for a, b in pairs
+                 if max(abs(cells[a][0] - cells[b][0]), abs(cells[a][1] - cells[b][1])) == 1}
+    return pairs
+
+
 def make_topology(rng, cfg):
-    """按环和随机弦构建周期基线，最后一个节点为云端。"""
+    """构建八邻接网格或历史环形基线，仅指定网关上云。"""
     n = cfg.n_edges
     adj = np.eye(n + 1, dtype=np.float32)
     base_rates = np.zeros_like(adj)
     base_background = np.zeros_like(adj)
     prop = np.zeros_like(adj)
     forward_power = np.zeros_like(adj)
-    pairs = set(zip(range(n - 1), range(1, n)))
-    if n > 1:
-        pairs.add((0, n - 1))
-    chords = sorted(set(combinations(range(n), 2)) - pairs)
-    if cfg.undirected_edge_links < len(pairs):
-        raise ValueError("目标无向边数不足以构建边缘环")
-    extra = min(cfg.undirected_edge_links - len(pairs), len(chords))
-    pairs.update(chords[i] for i in rng.choice(len(chords), extra, replace=False))
-    for a, b in sorted(pairs) + [(a, n) for a in range(n)]:
+    if cfg.edge_topology == "eight_neighbor":
+        pairs = edge_pairs(cfg)
+    else:
+        pairs = set(zip(range(n - 1), range(1, n)))
+        if n > 1:
+            pairs.add((0, n - 1))
+        chords = sorted(edge_pairs(cfg) - pairs)
+        if cfg.undirected_edge_links < len(pairs):
+            raise ValueError("目标无向边数不足以构建边缘环")
+        extra = min(cfg.undirected_edge_links - len(pairs), len(chords))
+        pairs.update(chords[i] for i in rng.choice(len(chords), extra, replace=False))
+    gateways = min(cfg.cloud_gateway_count or n, n)
+    for a, b in sorted(pairs) + [(a, n) for a in range(gateways)]:
         _activate_link(rng, cfg, a, b, adj, base_rates, base_background, prop, forward_power)
     return adj, base_rates, base_background, prop, forward_power
 
@@ -66,7 +103,8 @@ def fluctuate_topology(rng, cfg, adj, base_rates, base_background, prop, forward
     """更新物理链路，返回本时隙可观测速率、拥塞、趋势及周期内仍断开的边。"""
     edge_adj = adj[:cfg.n_edges, :cfg.n_edges]
     active = list(zip(*np.nonzero(np.triu(edge_adj, k=1))))
-    inactive = sorted(set(combinations(range(cfg.n_edges), 2)) - set(active))
+    allowed = edge_pairs(cfg)
+    inactive = sorted(allowed - set(active))
     disconnected = set(flapped_edges)
     edge_count = len(active)
     for a, b in active:
@@ -82,7 +120,8 @@ def fluctuate_topology(rng, cfg, adj, base_rates, base_background, prop, forward
             edge_adj[a, b] = edge_adj[b, a] = 1
 
     # 每个空余链路名额独立尝试激活，候选只取上个时隙未连接的边。
-    vacancies = min(cfg.undirected_edge_links - edge_count, len(inactive))
+    limit = len(allowed) if cfg.edge_topology == "eight_neighbor" else cfg.undirected_edge_links
+    vacancies = min(limit - edge_count, len(inactive))
     additions = rng.binomial(vacancies, cfg.link_flap_prob)
     continuous = base_rates > 0
     for i in rng.choice(len(inactive), additions, replace=False):
@@ -106,7 +145,7 @@ def fluctuate_topology(rng, cfg, adj, base_rates, base_background, prop, forward
 
 
 def simple_routes(adjacency, source, destination, max_hops):
-    """DFS 枚举边缘层简单路径，云端不作为中继节点。"""
+    """DFS 枚举真实简单路径，云端只允许作为最终目的地。"""
     routes = []
     stack = [(source, (source,))]
     while stack:
@@ -118,6 +157,6 @@ def simple_routes(adjacency, source, destination, max_hops):
             continue
         for neighbor in np.flatnonzero(adjacency[node]):
             neighbor = int(neighbor)
-            if neighbor not in path and neighbor != len(adjacency) - 1:
+            if neighbor not in path and (neighbor != len(adjacency) - 1 or neighbor == destination):
                 stack.append((neighbor, path + (neighbor,)))
     return routes

@@ -190,7 +190,7 @@ def main():
     parser = argparse.ArgumentParser(description="训练 GAT-PPO、PPO，或训练两者并生成对比图")
     parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
                         default="default")
-    parser.add_argument("--episodes", type=int, default=1000, help="训练结束时的总回合数")
+    parser.add_argument("--episodes", type=int, default=500, help="训练结束时的总回合数")
     parser.add_argument("--model", nargs="+", choices=(*MODEL_NAMES, "and", "gatppo and ppo", "gatpppo and ppo"),
                         metavar="MODEL",
                         default=["gatppo"], help="gatppo / ppo / gatppo and ppo（可加引号）")

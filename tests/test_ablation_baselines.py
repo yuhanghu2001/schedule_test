@@ -2,10 +2,9 @@ import unittest
 
 import numpy as np
 
-from src.ablation import shuffle_graph_observation
 from src.baselines import greedy_estimate_action, shortest_fastest_action
 from src.config import load_config
-from src.environment import Action
+from src.environment import Action, shuffle_graph_observation
 
 
 class AblationBaselineTest(unittest.TestCase):

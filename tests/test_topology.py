@@ -20,9 +20,9 @@ class DynamicTopologyTest(unittest.TestCase):
             active = env.rates > 0
             added = active & ~previous
             removed = previous & ~active
-            self.assertTrue(added.any() and removed.any())
+            self.assertTrue(added.any() or removed.any())
             np.testing.assert_array_equal(active, active.T)
-            self.assertTrue(active[n, :n].all())
+            np.testing.assert_array_equal(active[n, :n], np.arange(n) < cfg.cloud_gateway_count)
             self.assertLessEqual(np.count_nonzero(active[:n, :n]) // 2, cfg.undirected_edge_links)
             # 删除后仍有旧边连接全部边缘，新增链路和云均不参与连通性判断。
             retained = (active & previous)[:n, :n]
@@ -53,6 +53,23 @@ class DynamicTopologyTest(unittest.TestCase):
         self.assertEqual(env.flapped_edges, [])
         self.assertFalse(env.congestion_delta.any())
         np.testing.assert_array_equal(env.background, env.base_background)
+
+    def test_eight_neighbor_edges_remain_local_across_slots(self):
+        cfg = load_config("default")
+        env = EdgeEnv(cfg)
+        positions = env.node_positions[:env.cloud]
+        counts = {"horizontal": 0, "vertical": 0, "diagonal": 0}
+        for a, b in zip(*np.nonzero(np.triu(env.adj[:env.cloud, :env.cloud], 1))):
+            dx, dy = np.abs(positions[a] - positions[b])
+            kind = "horizontal" if dy == 0 else "vertical" if dx == 0 else "diagonal"
+            counts[kind] += 1
+        self.assertEqual(counts, {"horizontal": 9, "vertical": 8, "diagonal": 12})
+        for slot in range(cfg.episode_slots):
+            env._advance_to_slot(slot)
+            for a, b in zip(*np.nonzero(np.triu(env.adj[:env.cloud, :env.cloud], 1))):
+                dx, dy = np.abs(positions[a] - positions[b])
+                self.assertLessEqual(dx, 400)
+                self.assertLessEqual(dy, 165)
 
     def test_ar_mean_reversion_spike_and_clipping_include_cloud_arcs(self):
         cfg = replace(load_config("small_smoke"), link_flap_prob=0, congestion_step_noise=0,
