@@ -56,7 +56,7 @@ class EnvironmentContinuousIntegrationTest(unittest.TestCase):
         )
 
     def test_local_group_reallocation_updates_existing_metrics(self):
-        env = EdgeEnv(Config(n_tasks=2, tasks_per_slot=2, seed=3))
+        env = EdgeEnv(Config(episode_slots=1, seed=3, compute_degradation_max=0.0))
         env.tasks = [self.local_task(), self.local_task()]
         env.idx = 0
         env.observe()
@@ -78,7 +78,7 @@ class EnvironmentContinuousIntegrationTest(unittest.TestCase):
         self.assertAlmostEqual(env.slot_local_mem_used[0], 1.0)
 
     def test_return_traffic_uses_reverse_capacity_and_cloud_is_not_edge_hop(self):
-        env = EdgeEnv(Config(n_tasks=1, tasks_per_slot=1, seed=4))
+        env = EdgeEnv(Config(episode_slots=1, seed=4, compute_degradation_max=0.0))
         task = Task(
             source=0, access_edge=0, kind=0, data_mb=0.1, output_mb=0.05,
             compute_gflop=0.1, deadline_s=0.5, memory_gb=0.2,
@@ -88,13 +88,14 @@ class EnvironmentContinuousIntegrationTest(unittest.TestCase):
         env.idx = 0
         action = env._candidate(task, env.cloud, 0, (0, env.cloud))
         env.actions = [action]
-        env.step(0)
+        _, _, _, info = env.step(0)
         self.assertAlmostEqual(env.slot_link_used[0, env.cloud], task.data_mb)
         self.assertAlmostEqual(env.slot_link_used[env.cloud, 0], task.output_mb)
         self.assertEqual(env.total_hops, 0)
         self.assertEqual(env.total_path_length, 2)
         self.assertEqual(env.metrics()["mean_path_length"], 2.0)
         self.assertGreater(action.uplink_power, 0.0)
+        self.assertEqual(info["dinkelbach_residual"], action.dinkelbach_residual)
 
 
 if __name__ == "__main__":

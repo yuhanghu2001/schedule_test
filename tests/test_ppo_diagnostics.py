@@ -15,7 +15,7 @@ class PPODiagnosticsTest(unittest.TestCase):
     def test_update_returns_finite_diagnostics(self):
         cfg = replace(
             load_config("small_smoke"),
-            n_tasks=8, tasks_per_slot=4, ppo_epochs=2, ppo_batch_size=4,
+            episode_slots=2, arrival_rate=4.0, ppo_epochs=2, ppo_batch_size=4,
         )
         torch.manual_seed(cfg.seed)
         model = GATPPO()
@@ -41,7 +41,7 @@ class PPODiagnosticsTest(unittest.TestCase):
         ))
 
     def test_only_reject_action_has_zero_entropy(self):
-        cfg = replace(load_config("small_smoke"), n_tasks=1)
+        cfg = replace(load_config("small_smoke"), episode_slots=1)
         env = EdgeEnv(cfg)
         env.tasks = [Task(0, 0, 0, .1, .1, .1, .5, 100., .1, 1, False, False)]
         env.idx = 0

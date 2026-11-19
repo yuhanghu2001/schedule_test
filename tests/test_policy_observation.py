@@ -10,7 +10,7 @@ from src.models.policy import GATPPO
 
 class PolicyObservationTest(unittest.TestCase):
     def test_global_features_change_with_history(self):
-        cfg = replace(load_config("small_smoke"), n_tasks=2)
+        cfg = replace(load_config("small_smoke"), episode_slots=1)
         env = EdgeEnv(cfg)
         initial = env.reset()["global_features"].copy()
         env.accepted = 1

@@ -13,14 +13,20 @@ class TaskSamplingTest(unittest.TestCase):
         slack_max = 3.0
         tasks = sample_tasks(
             np.random.default_rng(42),
-            100,
-            20,
-            6,
-            radio_rates,
-            min_edge_compute,
-            slack_min,
-            slack_max,
-            0.6,
+            episode_slots=20,
+            arrival_rate=5.0,
+            burst_prob=0.15,
+            burst_multiplier=2.5,
+            hotspot_fraction=0.3,
+            hotspot_share=0.6,
+            topology_period_slots=5,
+            terminals=20,
+            edges=6,
+            radio_rates=radio_rates,
+            min_edge_compute_gflops=min_edge_compute,
+            deadline_slack_min=slack_min,
+            deadline_slack_max=slack_max,
+            must_offload_rate=0.6,
         )
 
         for task in tasks:
@@ -40,6 +46,14 @@ class TaskSamplingTest(unittest.TestCase):
         self.assertTrue(all(
             task.allow_offload for task in tasks if task.must_offload
         ))
+
+    def test_every_episode_slot_has_an_arrival(self):
+        tasks = sample_tasks(
+            np.random.default_rng(7), 4, 0.01, 0.0, 2.5, 0.3, 0.6, 2,
+            20, 6, np.full(20, 100.0), 150.0, 1.8, 3.0, 0.6,
+        )
+        self.assertEqual({task.slot for task in tasks}, set(range(4)))
+        self.assertEqual(len(tasks), 4)
 
 
 if __name__ == "__main__":

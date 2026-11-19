@@ -20,16 +20,24 @@ class Action:
     transport_energy: float = 0.0
     uplink_power: float = 0.0
     uplink_rate: float = 0.0
+    dinkelbach_residual: float = 0.0
+    estimated_delay: float = 0.0
+    estimated_energy: float = 0.0
 
 
 @dataclass
 class Assignment:
     task_index: int
     action: Action
+    compute_degradation: float
+    realized_background: dict
+    actual_transport_delay: float
+    actual_transport_energy: float
+    finish_time: float
 
 
 class EdgeEnv:
-    """一个 step 调度一项任务，每 tasks_per_slot 项任务共享一个调度时隙。"""
+    """一个 step 调度一项任务，任务按自身到达时隙推进环境。"""
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -56,7 +64,13 @@ class EdgeEnv:
         )
         self.tasks = sample_tasks(
             self.rng,
-            c.n_tasks,
+            c.episode_slots,
+            c.arrival_rate,
+            c.burst_prob,
+            c.burst_multiplier,
+            c.hotspot_fraction,
+            c.hotspot_share,
+            c.topology_period_slots,
             c.n_terminals,
             c.n_edges,
             radio_rates=self.radio_rates,
@@ -81,6 +95,11 @@ class EdgeEnv:
         self.slot_queues = np.zeros(self.n_graph_nodes, dtype=np.float32)
         self.slot_link_used = np.zeros_like(self.rates)
         self.slot_assignments = []
+        self.active_assignments = []
+        self.assignments = []
+        self.carryover_resource_used = np.zeros_like(self.speed)
+        self.carryover_local_resource_used = np.zeros((c.n_terminals, 3), dtype=np.float32)
+        self.slot_step_count = 0
         self.accepted = 0
         self.sum_delay = 0.
         self.sum_priority_delay = 0.
@@ -118,10 +137,65 @@ class EdgeEnv:
         return self.rates[a, b] * (1 - self.background[a, b]) * self.cfg.slot_seconds / 8
 
     def _load_variance(self):
-        remote_load = self.slot_resource_used.sum(1) / self.speed.sum(1)
-        local_load = self.slot_local_resource_used.sum(1) / self.local_speed.sum()
-        load = np.concatenate((local_load, remote_load))
-        return float(np.var(load))
+        edge_load = (
+            self.slot_resource_used[:self.cloud].sum(1)
+            / self.speed[:self.cloud].sum(1)
+        )
+        return float(np.var(edge_load))
+
+    def _rebuild_occupancy(self):
+        self.slot_resource_used.fill(0)
+        self.slot_local_resource_used.fill(0)
+        self.slot_local_mem_used.fill(0)
+        self.slot_local_storage_used.fill(0)
+        self.slot_local_queues.fill(0)
+        self.slot_mem_used.fill(0)
+        self.slot_storage_used.fill(0)
+        self.slot_queues.fill(0)
+        for assignment in self.active_assignments:
+            task = self.tasks[assignment.task_index]
+            action = assignment.action
+            if action.destination == -1:
+                source = task.source
+                self.slot_local_resource_used[source, action.resource] += action.compute_share
+                self.slot_local_mem_used[source] += task.memory_gb
+                self.slot_local_storage_used[source] += task.storage_gb
+                self.slot_local_queues[source] += 1
+            else:
+                destination = action.destination
+                self.slot_resource_used[destination, action.resource] += action.compute_share
+                self.slot_mem_used[destination] += task.memory_gb
+                self.slot_storage_used[destination] += task.storage_gb
+                self.slot_queues[destination] += 1
+
+    def _advance_to_slot(self, target_slot):
+        while self.slot < target_slot:
+            self.total_load_variance += self._load_variance()
+            self.load_samples += 1
+            self.slot += 1
+            slot_start = self.slot * self.cfg.slot_seconds
+            self.active_assignments = [
+                assignment for assignment in self.active_assignments
+                if assignment.finish_time > slot_start
+            ]
+            self._rebuild_occupancy()
+            self.carryover_resource_used = self.slot_resource_used.copy()
+            self.carryover_local_resource_used = self.slot_local_resource_used.copy()
+            self.slot_link_used.fill(0)
+            self.slot_assignments.clear()
+            self.slot_step_count = 0
+            if self.slot % self.cfg.topology_period_slots == 0:
+                self._new_topology()
+            else:
+                self.background = np.where(
+                    self.rates > 0,
+                    self.rng.uniform(
+                        self.cfg.congestion_min,
+                        self.cfg.congestion_max,
+                        self.background.shape,
+                    ),
+                    0,
+                ).astype(np.float32)
 
     def _local_support(self, task, resource):
         return bool(self.support[resource, task.kind] and
@@ -139,18 +213,30 @@ class EdgeEnv:
                 group.append(assignment)
         return group
 
-    def _transport_terms(self, task, destination, path):
+    def _transport_terms(self, task, destination, path, realized_background=None):
         delay = task.output_mb * 8 / self.radio_rates[task.source]
         energy = self.cfg.uplink_circuit_power_w * delay
         for a, b in zip(path, path[1:]):
-            if task.data_mb + self.slot_link_used[a, b] > self._slot_capacity_mb(a, b):
-                return None
-            if task.output_mb + self.slot_link_used[b, a] > self._slot_capacity_mb(b, a):
-                return None
-            upload = task.data_mb * 8 / (self.rates[a, b] * (1 - self.background[a, b]))
-            upload_queue = .02 * self.slot_link_used[a, b] / self._slot_capacity_mb(a, b)
-            download = task.output_mb * 8 / (self.rates[b, a] * (1 - self.background[b, a]))
-            download_queue = .02 * self.slot_link_used[b, a] / self._slot_capacity_mb(b, a)
+            if realized_background is None:
+                if task.data_mb + self.slot_link_used[a, b] > self._slot_capacity_mb(a, b):
+                    return None
+                if task.output_mb + self.slot_link_used[b, a] > self._slot_capacity_mb(b, a):
+                    return None
+                upload_background = self.background[a, b]
+                download_background = self.background[b, a]
+            else:
+                upload_background = realized_background[a, b]
+                download_background = realized_background[b, a]
+            upload_capacity = (
+                self.rates[a, b] * (1 - upload_background) * self.cfg.slot_seconds / 8
+            )
+            download_capacity = (
+                self.rates[b, a] * (1 - download_background) * self.cfg.slot_seconds / 8
+            )
+            upload = task.data_mb * 8 / (self.rates[a, b] * (1 - upload_background))
+            upload_queue = .02 * self.slot_link_used[a, b] / upload_capacity
+            download = task.output_mb * 8 / (self.rates[b, a] * (1 - download_background))
+            download_queue = .02 * self.slot_link_used[b, a] / download_capacity
             delay += upload + upload_queue + self.prop[a, b]
             delay += download + download_queue + self.prop[b, a]
             energy += self.forward_power[a, b] * (upload + upload_queue)
@@ -158,13 +244,15 @@ class EdgeEnv:
         delay += .005 * self.slot_queues[destination]
         return delay, energy
 
-    def _completion(self, task, resource, share, transport_delay, transport_energy, local):
+    def _estimated_completion(
+        self, task, resource, share, transport_delay, transport_energy, local,
+    ):
         compute_delay = task.compute_gflop / share
         compute_energy = self.resource_power[resource] * compute_delay
         if local:
             if compute_delay > task.deadline_s:
                 return None
-            return compute_delay, compute_energy, 0.0, 0.0
+            return compute_delay, compute_energy, 0.0, 0.0, 0.0
         remaining_uplink_time = task.deadline_s - transport_delay - compute_delay
         if remaining_uplink_time <= 0.0:
             return None
@@ -184,13 +272,38 @@ class EdgeEnv:
         delay = transport_delay + compute_delay + uplink_time
         radio_energy = (solution.power_w + self.cfg.uplink_circuit_power_w) * uplink_time
         energy = transport_energy + compute_energy + radio_energy
-        return delay, energy, solution.power_w, solution.rate_mbps
+        return delay, energy, solution.power_w, solution.rate_mbps, solution.residual
+
+    def _actual_completion(
+        self, task, action, share, degradation, transport_delay, transport_energy,
+    ):
+        compute_delay = task.compute_gflop / (share * (1 - degradation))
+        compute_energy = self.resource_power[action.resource] * compute_delay
+        if action.destination == -1:
+            return compute_delay, compute_energy
+        uplink_time = task.data_mb * 8 / action.uplink_rate
+        radio_energy = (
+            action.uplink_power + self.cfg.uplink_circuit_power_w
+        ) * uplink_time
+        return (
+            transport_delay + compute_delay + uplink_time,
+            transport_energy + compute_energy + radio_energy,
+        )
 
     def _group_allocation(self, task, destination, resource, transport_delay, transport_energy):
         group = self._same_compute_group(task, destination, resource)
         group_tasks = [self.tasks[assignment.task_index] for assignment in group] + [task]
         transport_delays = [assignment.action.transport_delay for assignment in group] + [transport_delay]
-        capacity = self.local_speed[resource] if destination == -1 else self.speed[destination, resource]
+        if destination == -1:
+            capacity = (
+                self.local_speed[resource]
+                - self.carryover_local_resource_used[task.source, resource]
+            )
+        else:
+            capacity = (
+                self.speed[destination, resource]
+                - self.carryover_resource_used[destination, resource]
+            )
         minimum_shares = []
         for item, fixed_delay in zip(group_tasks, transport_delays):
             if destination >= 0:
@@ -211,14 +324,14 @@ class EdgeEnv:
         for assignment, share in zip(group, shares[:-1]):
             action = assignment.action
             other_task = self.tasks[assignment.task_index]
-            outcome = self._completion(
+            outcome = self._estimated_completion(
                 other_task, resource, share, action.transport_delay,
                 action.transport_energy, destination == -1,
             )
             if outcome is None:
                 return None
             outcomes.append((assignment, float(share), outcome))
-        candidate = self._completion(
+        candidate = self._estimated_completion(
             task, resource, shares[-1], transport_delay, transport_energy, destination == -1,
         )
         if candidate is None:
@@ -253,11 +366,42 @@ class EdgeEnv:
         if allocation is None:
             return None
         _, share, completion = allocation
-        delay, energy, power, rate = completion
+        delay, energy, power, rate, residual = completion
         return Action(
             destination, resource, path, delay, energy, share,
-            transport_delay, transport_energy, power, rate,
+            transport_delay, transport_energy, power, rate, residual,
+            delay, energy,
         )
+
+    def _sample_uncertainty(self, task, action):
+        realized = {}
+        for a, b in zip(action.path, action.path[1:]):
+            for source, target in ((a, b), (b, a)):
+                realized[source, target] = float(np.clip(
+                    self.background[source, target]
+                    + self.rng.uniform(
+                        -self.cfg.congestion_noise,
+                        self.cfg.congestion_noise,
+                    ),
+                    0.0,
+                    self.cfg.congestion_realized_max,
+                ))
+        degradation = float(self.rng.uniform(0.0, self.cfg.compute_degradation_max))
+        if action.destination == -1:
+            transport_delay, transport_energy = 0.0, 0.0
+        else:
+            transport_delay, transport_energy = self._transport_terms(
+                task, action.destination, action.path, realized,
+            )
+        return realized, degradation, transport_delay, transport_energy
+
+    def _task_reward_parts(self, task, action):
+        completed = action.delay <= task.deadline_s
+        completion = self.cfg.reward_beta_completion * float(completed)
+        delay = -self.cfg.reward_beta_delay * action.delay / self.cfg.reward_delay_ref
+        energy = -self.cfg.reward_beta_energy * action.energy / self.cfg.reward_energy_ref
+        incomplete = -self.cfg.reward_penalty_incomplete * float(not completed)
+        return completion, delay, energy, incomplete
 
     def _make_candidates(self):
         task = self.tasks[self.idx]
@@ -310,7 +454,13 @@ class EdgeEnv:
             node[j, 9] = float(self.speed[j].sum() / 10000)
         edge = np.zeros((n, n, 3), dtype=np.float32)
         edge[:, :, 0] = self.rates / 2000
-        edge[:, :, 1] = self.background + self.slot_link_used / np.maximum(1., self.rates / 8)
+        slot_capacity = self.rates * (1 - self.background) * self.cfg.slot_seconds / 8
+        edge[:, :, 1] = self.background + np.divide(
+            self.slot_link_used,
+            slot_capacity,
+            out=np.zeros_like(self.slot_link_used),
+            where=slot_capacity > 0,
+        )
         edge[:, :, 2] = self.prop / .003
         return node, edge
 
@@ -343,17 +493,18 @@ class EdgeEnv:
             task.memory_gb / 2, task.kind / 4, float(task.allow_offload),
         ], dtype=np.float32)
         task_count = len(self.tasks)
-        slot_count = (task_count + self.cfg.tasks_per_slot - 1) // self.cfg.tasks_per_slot
+        slot_task_count = sum(item.slot == self.slot for item in self.tasks)
+        processed_in_slot = sum(item.slot == self.slot for item in self.tasks[:self.idx])
         global_features = np.array([
             self.idx / task_count,
             self.accepted / task_count,
             self.accepted / max(1, self.idx),
             self.sum_delay / (task_count * self.cfg.reward_delay_ref),
             self.total_energy / (task_count * self.cfg.reward_energy_ref),
-            self.total_load_variance / (slot_count * self.cfg.reward_variance_ref),
+            self.total_load_variance / (self.cfg.episode_slots * self.cfg.reward_variance_ref),
             self._load_variance() / self.cfg.reward_variance_ref,
-            self.slot / slot_count,
-            (self.idx % self.cfg.tasks_per_slot) / self.cfg.tasks_per_slot,
+            self.slot / self.cfg.episode_slots,
+            processed_in_slot / slot_task_count,
         ], dtype=np.float32)
         gat_adj = self.adj.copy()
         # 云端用于执行和广域链路，不作为边缘间图消息传递的超级中继。
@@ -377,6 +528,7 @@ class EdgeEnv:
         invalid_action = action_id < 0 or action_id >= len(self.actions)
         action = self.actions[-1] if invalid_action else self.actions[action_id]
         accepted = not invalid_action and action.destination != -2
+        load_before = 0.0 if self.slot_step_count == 0 else self._load_variance()
         self.action_count_sum += len(self.actions)
         if feasible_count:
             self.feasible_tasks += 1
@@ -384,6 +536,7 @@ class EdgeEnv:
                 self.conditional_rejects += 1
         elif not accepted and not invalid_action:
             self.forced_rejects += 1
+        reward_group_correction_part = 0.0
         if accepted:
             allocation = self._group_allocation(
                 task, action.destination, action.resource,
@@ -392,19 +545,60 @@ class EdgeEnv:
             group_outcomes, candidate_share, candidate_outcome = allocation
             for assignment, share, outcome in group_outcomes:
                 other_task = self.tasks[assignment.task_index]
+                previous_parts = self._task_reward_parts(other_task, assignment.action)
                 previous_delay = assignment.action.delay
                 previous_energy = assignment.action.energy
-                delay, energy, power, rate = outcome
+                estimated_delay, estimated_energy, power, rate, residual = outcome
+                assignment.action.compute_share = share
+                assignment.action.estimated_delay = estimated_delay
+                assignment.action.estimated_energy = estimated_energy
+                assignment.action.uplink_power = power
+                assignment.action.uplink_rate = rate
+                assignment.action.dinkelbach_residual = residual
+                delay, energy = self._actual_completion(
+                    other_task,
+                    assignment.action,
+                    share,
+                    assignment.compute_degradation,
+                    assignment.actual_transport_delay,
+                    assignment.actual_transport_energy,
+                )
                 self.sum_delay += delay - previous_delay
                 self.sum_priority_delay += other_task.priority * (delay - previous_delay)
                 self.total_energy += energy - previous_energy
-                assignment.action.compute_share = share
                 assignment.action.delay = delay
                 assignment.action.energy = energy
-                assignment.action.uplink_power = power
-                assignment.action.uplink_rate = rate
+                assignment.finish_time = (
+                    other_task.slot * self.cfg.slot_seconds + delay
+                )
+                current_parts = self._task_reward_parts(other_task, assignment.action)
+                reward_group_correction_part += sum(current_parts) - sum(previous_parts)
             action.compute_share = candidate_share
-            action.delay, action.energy, action.uplink_power, action.uplink_rate = candidate_outcome
+            (action.estimated_delay, action.estimated_energy, action.uplink_power,
+             action.uplink_rate, action.dinkelbach_residual) = candidate_outcome
+            realized, degradation, actual_transport_delay, actual_transport_energy = (
+                self._sample_uncertainty(task, action)
+            )
+            action.delay, action.energy = self._actual_completion(
+                task,
+                action,
+                candidate_share,
+                degradation,
+                actual_transport_delay,
+                actual_transport_energy,
+            )
+            assignment = Assignment(
+                self.idx,
+                action,
+                degradation,
+                realized,
+                actual_transport_delay,
+                actual_transport_energy,
+                task.slot * self.cfg.slot_seconds + action.delay,
+            )
+            self.slot_assignments.append(assignment)
+            self.active_assignments.append(assignment)
+            self.assignments.append(assignment)
             self.accepted += 1
             self.sum_delay += action.delay
             self.sum_priority_delay += task.priority * action.delay
@@ -414,28 +608,11 @@ class EdgeEnv:
                 self.total_hops += max(0, len(action.path) - 1)
             if action.destination != -1:
                 self.total_path_length += len(action.path)
-            if action.destination == -1:
-                source = task.source
-                self.slot_local_resource_used[source, action.resource] = sum(
-                    assignment.action.compute_share for assignment in self._same_compute_group(
-                        task, action.destination, action.resource)
-                ) + action.compute_share
-                self.slot_local_mem_used[source] += task.memory_gb
-                self.slot_local_storage_used[source] += task.storage_gb
-                self.slot_local_queues[source] += 1
-            else:
-                j = action.destination
-                self.slot_resource_used[j, action.resource] = sum(
-                    assignment.action.compute_share for assignment in self._same_compute_group(
-                        task, action.destination, action.resource)
-                ) + action.compute_share
-                self.slot_mem_used[j] += task.memory_gb
-                self.slot_storage_used[j] += task.storage_gb
-                self.slot_queues[j] += 1
+            self._rebuild_occupancy()
+            if action.destination != -1:
                 for a, b in zip(action.path, action.path[1:]):
                     self.slot_link_used[a, b] += task.data_mb
                     self.slot_link_used[b, a] += task.output_mb
-            self.slot_assignments.append(Assignment(self.idx, action))
             if action.destination == -1:
                 self.local_executions += 1
             elif action.destination == self.cloud:
@@ -445,7 +622,7 @@ class EdgeEnv:
         completed = accepted and action.delay <= task.deadline_s
         normalized_delay = action.delay / self.cfg.reward_delay_ref if accepted else 0.0
         normalized_energy = action.energy / self.cfg.reward_energy_ref if accepted else 0.0
-        normalized_load = self._load_variance() / self.cfg.reward_variance_ref
+        load_after = self._load_variance()
         if invalid_action:
             constraint_penalty = self.cfg.reward_penalty_invalid
         elif accepted and not completed:
@@ -461,58 +638,76 @@ class EdgeEnv:
         reward_energy_part = (
             -self.cfg.reward_beta_energy * float(accepted) * normalized_energy
         )
-        reward_load_part = -self.cfg.reward_beta_load * normalized_load
+        reward_load_part = (
+            -self.cfg.reward_beta_load
+            * (load_after - load_before)
+            / self.cfg.reward_variance_ref
+        )
         reward_constraint_part = -constraint_penalty
         # r_i = beta_1*delta_i - y_i*(beta_2*t_i + beta_3*E_i)
         #       - beta_4*D_load - Omega_i
-        reward = (reward_completion_part + reward_delay_part + reward_energy_part
-                  + reward_load_part + reward_constraint_part)
+        reward = (
+            reward_completion_part
+            + reward_delay_part
+            + reward_energy_part
+            + reward_group_correction_part
+            + reward_load_part
+            + reward_constraint_part
+        )
         self.total_reward += reward
+        self.slot_step_count += 1
         self.idx += 1
         done = self.idx == len(self.tasks)
-        slot_finished = done or self.idx % self.cfg.tasks_per_slot == 0
-        if slot_finished:
+        if done:
             self.total_load_variance += self._load_variance()
             self.load_samples += 1
-        if not done and self.idx % self.cfg.tasks_per_slot == 0:
-            self.slot += 1
-            self.slot_resource_used.fill(0)
-            self.slot_local_resource_used.fill(0)
-            self.slot_local_mem_used.fill(0)
-            self.slot_local_storage_used.fill(0)
-            self.slot_local_queues.fill(0)
-            self.slot_mem_used.fill(0)
-            self.slot_storage_used.fill(0)
-            self.slot_queues.fill(0)
-            self.slot_link_used.fill(0)
-            self.slot_assignments.clear()
-            if self.slot % self.cfg.topology_period_slots == 0:
-                self._new_topology()
-            else:
-                self.background = np.where(self.rates > 0,
-                    self.rng.uniform(self.cfg.congestion_min, self.cfg.congestion_max,
-                                     self.background.shape), 0).astype(np.float32)
+        elif self.tasks[self.idx].slot != self.slot:
+            self._advance_to_slot(self.tasks[self.idx].slot)
         obs = None if done else self.observe()
         return obs, float(reward), done, {"accepted": accepted, "destination": action.destination,
                                           "resource": action.resource, "path": action.path,
                                           "delay": action.delay, "energy": action.energy,
-                                          "load_variance": normalized_load * self.cfg.reward_variance_ref,
+                                          "estimated_delay": action.estimated_delay,
+                                          "estimated_energy": action.estimated_energy,
+                                          "load_variance": load_after,
+                                          "load_variance_before": load_before,
                                           "f": action.compute_share,
                                           "p_up": action.uplink_power,
+                                          "dinkelbach_residual": action.dinkelbach_residual,
                                           "feasible_count": feasible_count,
                                           "invalid_action": invalid_action,
                                           "completed": completed,
                                           "reward_completion_part": reward_completion_part,
                                           "reward_delay_part": reward_delay_part,
                                           "reward_energy_part": reward_energy_part,
+                                          "reward_group_correction_part": reward_group_correction_part,
                                           "reward_load_part": reward_load_part,
                                           "reward_constraint_part": reward_constraint_part}
 
     def metrics(self):
         count = len(self.tasks)
-        avg_delay = self.sum_delay / self.accepted if self.accepted else None
-        priority_delay = self.sum_priority_delay / self.sum_priority if self.accepted else None
-        avg_energy = self.total_energy / self.accepted if self.accepted else None
+        successful = [
+            assignment for assignment in self.assignments
+            if assignment.action.delay <= self.tasks[assignment.task_index].deadline_s
+        ]
+        avg_delay = (
+            sum(item.action.delay for item in successful) / len(successful)
+            if successful else None
+        )
+        successful_priority = sum(
+            self.tasks[item.task_index].priority for item in successful
+        )
+        priority_delay = (
+            sum(
+                self.tasks[item.task_index].priority * item.action.delay
+                for item in successful
+            ) / successful_priority
+            if successful else None
+        )
+        avg_energy = (
+            sum(item.action.energy for item in successful) / len(successful)
+            if successful else None
+        )
         mean_hops = self.total_hops / self.accepted if self.accepted else None
         mean_path_length = (
             self.total_path_length / self.accepted if self.accepted else None
@@ -521,7 +716,12 @@ class EdgeEnv:
         objective_score = self.total_reward / count
         return {
             "tasks": count,
-            "task_success_rate": self.accepted / count,
+            "task_success_rate": len(successful) / count,
+            "acceptance_rate": self.accepted / count,
+            "deadline_miss_rate": (
+                (self.accepted - len(successful)) / self.accepted
+                if self.accepted else 0.0
+            ),
             "avg_delay_s": avg_delay,
             "priority_weighted_delay_s": priority_delay,
             "total_energy_j": self.total_energy,

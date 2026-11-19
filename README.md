@@ -25,11 +25,11 @@ results/
 
 ## 训练设备与线程
 
-RTX 50 系显卡需要支持 Blackwell 的 PyTorch 2.7 或更高版本。本机已按 `environment-gpu.yml` 创建独立的 `gatppo-gpu` 环境；GPU 对照可用 `conda run -n gatppo-gpu python src/train.py --device cuda --threads 4` 启动。`--device auto` 会在 CUDA 可用时选择 GPU，训练配置快照会记录实际设备和 CPU 线程数。
+当前小图逐任务训练在 CPU 上显著快于 GPU，**默认使用 `gatppo` 环境与 `--device cpu --threads 2`**（`conda run -n gatppo python src/train.py`）。如需在 RTX 50 系显卡上做 GPU 对照，可使用独立的 `gatppo-gpu` 环境（`conda run -n gatppo-gpu python src/train.py --device cuda --threads 2`）。`--device auto` 会在 CUDA 可用时选择 GPU，训练配置快照会记录实际设备和 CPU 线程数。
 
 训练过程可用 `Ctrl+C` 手动中断。训练入口会先关闭并刷新 JSONL，再根据已完成回合重建 `training_metrics.png` 和已有的 `evaluation_metrics.png`，同时保存 last checkpoint。
 
-环境中的候选动作枚举、多跳路径和物理约束仍是顺序相关的 Python/NumPy 逻辑，保留在 CPU；GAT-PPO 前向和参数更新可运行在 GPU。当前默认模型为两层256维GAT、128维Actor/Critic头，每轮200步并更新5个PPO epoch。旧的32维、1个PPO epoch设备基准不再代表当前配置，正式训练前需重新对比 CPU 与 GPU。
+环境中的候选动作枚举、多跳路径和物理约束仍是顺序相关的 Python/NumPy 逻辑，保留在 CPU；当前默认模型为两层256维GAT、128维Actor/Critic头，每轮含20个时隙并更新5个PPO epoch，因图规模小且逐样本更新，CPU（2线程）单轮约 2s，快于 GPU 的频繁拷贝与核函数启动开销。
 
 ## 文件概览
 
@@ -53,7 +53,7 @@ schedule_test/
 │   ├── topology.py                   # 动态连通图与简单路由
 │   ├── continuous.py                 # Dinkelbach 功率与 KKT 算力子问题
 │   ├── ablation.py                   # 打乱图结构消融环境
-│   ├── baselines.py                  # 最短路径+最快资源启发式
+│   ├── baselines.py                  # 最短最快与估计一步奖励贪心基线
 │   ├── environment.py                # 状态、合法动作、更新、统计
 │   ├── evaluation.py                 # 固定种子贪心评估与指标聚合
 │   ├── plotting.py                   # 训练/验证曲线和横轴格式
@@ -76,12 +76,12 @@ Codex、Claude 等 AI 的每次完整工作记录保存在 `memory/`，目录名
 
 ## 重要实现边界
 
-- **已实现**：动态稀疏拓扑、DFS有效简单路径、正反向共享链路容量、异构资源匹配、时限过滤、逐任务奖励、shuffled mini-batch PPO、完整状态续训与独立种子评估。
+- **已实现**：非平稳突发/热点任务流、动态稀疏拓扑、DFS有效简单路径、正反向共享链路容量、跨时隙资源占用、执行不确定性、异构资源匹配、估计时限过滤、增量奖励、shuffled mini-batch PPO、完整状态续训与独立种子评估。
 - **任务时限**：每个终端先抽取实际无线速率，deadline 按任务输入上传、结果回传和最慢边缘算力计算参考处理时间，再乘配置化松弛系数；不做时隙长度截断。该参考时间仍不包含排队和多跳传输，因此不等同于完整场景的可行性保证。
 - **外部调度**：默认 60% 任务设置 `must_offload`，这类任务不生成源端本地候选，只能由部署了对应服务的边缘或云端执行，或被合法拒绝。
 - **连续子问题**：固定离散执行节点、异构资源和路径后，上行功率通过 Dinkelbach 法求解 Shannon 能效分式子问题；同节点同资源并发任务通过带截止时间最低算力约束的 KKT active-set 分配。两者只保证各自连续子问题最优，**不表示整个四目标混合离散–连续问题达到全局最优。**
 - **模型差异**：数学文档给出完整 C1–C24 正式约束体系；代码采用“生成可行简单路径/动作”的实现方式隐式满足路由流守恒和无环条件，而非调用 MILP 求解器求完整原问题。
-- **结果差异**：训练 reward 使用 `beta_1*delta-y*(beta_2*t+beta_3*E)-beta_4*D_load-Omega` 公式，四项系数比例为 `2:1:1:1`；未折扣时满足 `episode_reward/N=objective_score`，实验仍分别记录四项原始 episode 指标。
+- **结果差异**：训练 reward 使用 `beta_1*delta-y*(beta_2*t+beta_3*E)-beta_4*D_load-Omega` 公式，四项系数比例为 `2:1:1:1`；任务项使用接收后的实际时延/能耗，负载项按时隙内边缘负载方差增量结算。未折扣时满足 `episode_reward/N=objective_score`，成功率与接收率分别报告。
 - **实验差异**：仓库提供四方法、多种子和跨场景运行入口；只有真实完成相同预算实验后才能报告均值、方差或性能提升。
 
 阅读次序：`AGENTS.md` → `docs/01_环境开发说明书.md` → `docs/02_数学模型与C1-C24约束.md`。

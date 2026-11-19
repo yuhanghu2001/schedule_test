@@ -3,7 +3,8 @@ import unittest
 import numpy as np
 
 from src.ablation import shuffle_graph_observation
-from src.baselines import shortest_fastest_action
+from src.baselines import greedy_estimate_action, shortest_fastest_action
+from src.config import load_config
 from src.environment import Action
 
 
@@ -34,6 +35,17 @@ class AblationBaselineTest(unittest.TestCase):
         ]
         self.assertEqual(shortest_fastest_action(actions), 2)
         self.assertEqual(shortest_fastest_action(actions[-1:]), 0)
+
+    def test_greedy_estimate_uses_candidate_estimates(self):
+        actions = [
+            Action(0, 0, (0,), .2, 3., 100.),
+            Action(1, 0, (0, 1), .4, .3, 100.),
+            Action(-2, -1, (), 0., 0., 0.),
+        ]
+        self.assertEqual(greedy_estimate_action(actions, load_config("default")), 1)
+        self.assertEqual(
+            greedy_estimate_action(actions[-1:], load_config("default")), 0,
+        )
 
 
 if __name__ == "__main__":

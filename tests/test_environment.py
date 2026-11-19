@@ -10,7 +10,7 @@ from src.tasks import Task
 
 class EnvironmentDynamicsTest(unittest.TestCase):
     def test_service_deployment_forces_remote_edge_candidates(self):
-        cfg = replace(load_config("small_smoke"), n_tasks=1)
+        cfg = replace(load_config("small_smoke"), episode_slots=1)
         env = EdgeEnv(cfg)
         env.tasks = [
             Task(0, 0, 3, 1.0, 0.1, 1.0, 10.0, 0.5, 0.5, 1, True, True),
@@ -33,7 +33,10 @@ class EnvironmentDynamicsTest(unittest.TestCase):
         self.assertFalse(any(action.destination == -1 for action in env.actions))
 
     def test_kkt_reallocation_updates_previous_task(self):
-        cfg = replace(load_config("small_smoke"), n_tasks=2, tasks_per_slot=2)
+        cfg = replace(
+            load_config("small_smoke"), episode_slots=1,
+            compute_degradation_max=0.0,
+        )
         env = EdgeEnv(cfg)
         env.tasks = [
             Task(1, 1, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1, False, False),
@@ -115,12 +118,12 @@ class EnvironmentDynamicsTest(unittest.TestCase):
                         )
             for assignment in env.slot_assignments:
                 self.assertLessEqual(
-                    assignment.action.delay,
+                    assignment.action.estimated_delay,
                     env.tasks[assignment.task_index].deadline_s + 1e-12,
                 )
 
     def test_no_success_delay_is_null(self):
-        cfg = replace(load_config("small_smoke"), n_tasks=2)
+        cfg = replace(load_config("small_smoke"), episode_slots=2)
         env = EdgeEnv(cfg)
         env.reset()
         done = False
@@ -133,6 +136,33 @@ class EnvironmentDynamicsTest(unittest.TestCase):
         self.assertIsNone(metrics["mean_hops_accepted"])
         self.assertGreater(metrics["load_balance_degree"], 0.0)
         self.assertLessEqual(metrics["load_balance_degree"], 1.0)
+
+    def test_carryover_resource_is_reserved_then_released(self):
+        cfg = replace(
+            load_config("small_smoke"), episode_slots=3,
+            compute_degradation_max=0.0,
+        )
+        env = EdgeEnv(cfg)
+        env.tasks = [
+            Task(0, 0, 2, .1, .01, 10., 3., .5, .5, 1, False, False, 0),
+            Task(0, 0, 0, .1, .01, .1, 1., 100., .1, 1, False, False, 1),
+            Task(0, 0, 0, .1, .01, .1, 1., 100., .1, 1, False, False, 2),
+        ]
+        env.idx = 0
+        env.observe()
+        action = next(
+            index for index, item in enumerate(env.actions)
+            if item.destination == -1 and item.resource == 2
+        )
+        env.step(action)
+        self.assertEqual(env.slot, 1)
+        self.assertAlmostEqual(env.carryover_local_resource_used[0, 2], 6.0)
+        self.assertAlmostEqual(env.slot_local_mem_used[0], .5)
+
+        env.step(len(env.actions) - 1)
+        self.assertEqual(env.slot, 2)
+        self.assertAlmostEqual(env.carryover_local_resource_used[0, 2], 0.0)
+        self.assertAlmostEqual(env.slot_local_mem_used[0], 0.0)
 
 
 if __name__ == "__main__":

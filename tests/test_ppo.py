@@ -13,11 +13,12 @@ from src.models.policy import GATPPO
 class PPOTrainingTest(unittest.TestCase):
     def test_default_parameters_match_experiment_table(self):
         cfg = load_config("default")
-        self.assertEqual(cfg.n_tasks, 200)
+        self.assertEqual(cfg.episode_slots, 20)
+        self.assertEqual(cfg.arrival_rate, 10.0)
         self.assertEqual(cfg.gat_hidden_dim, 256)
         self.assertEqual(cfg.actor_hidden_dim, 128)
         self.assertEqual(cfg.critic_hidden_dim, 128)
-        self.assertEqual(cfg.actor_learning_rate, 1e-4)
+        self.assertEqual(cfg.actor_learning_rate, 3e-4)
         self.assertEqual(cfg.critic_learning_rate, 1e-3)
         self.assertEqual(cfg.ppo_epochs, 5)
         self.assertEqual(cfg.dinkelbach_max_iterations, 4)
@@ -26,14 +27,14 @@ class PPOTrainingTest(unittest.TestCase):
         self.assertEqual(high_congestion.congestion_min, 0.45)
         self.assertEqual(high_congestion.congestion_max, 0.8)
         small_smoke = load_config("small_smoke")
-        self.assertEqual(small_smoke.n_tasks, 36)
+        self.assertEqual(small_smoke.episode_slots, 4)
         self.assertEqual(small_smoke.ppo_batch_size, 16)
 
     def test_minibatch_update_changes_parameters(self):
         cfg = replace(
             load_config("small_smoke"),
-            n_tasks=12,
-            tasks_per_slot=6,
+            episode_slots=2,
+            arrival_rate=4.0,
             ppo_epochs=2,
             ppo_batch_size=4,
         )
@@ -42,7 +43,7 @@ class PPOTrainingTest(unittest.TestCase):
         model = GATPPO()
         trainer = PPOTrainer(model, cfg)
         self.assertEqual(trainer.optimizer.param_groups[0]["name"], "actor")
-        self.assertEqual(trainer.optimizer.param_groups[0]["lr"], 1e-4)
+        self.assertEqual(trainer.optimizer.param_groups[0]["lr"], 3e-4)
         self.assertEqual(trainer.optimizer.param_groups[1]["name"], "critic")
         self.assertEqual(trainer.optimizer.param_groups[1]["lr"], 1e-3)
         episode, _ = trainer.collect_episode(EdgeEnv(cfg))

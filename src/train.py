@@ -61,7 +61,7 @@ def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_sc
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
                     default="default")
-parser.add_argument("--episodes", type=int, default=500,
+parser.add_argument("--episodes", type=int, default=1000,
                     help="训练结束时的总 episode 数")
 parser.add_argument("--model", choices=("gat", "flat", "shuffled_gat"), default="gat")
 parser.add_argument("--seed", type=int, help="覆盖新训练运行的配置种子")
@@ -70,8 +70,8 @@ parser.add_argument("--output", help="run-dir 内 last checkpoint 的文件名")
 parser.add_argument("--resume", help="从 checkpoint 的模型、优化器和 episode 继续训练")
 parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu",
                     help="模型训练设备；小图逐任务训练默认使用实测更快的 CPU")
-parser.add_argument("--threads", type=int, default=4,
-                    help="PyTorch CPU 线程数；小图模型默认 4 线程")
+parser.add_argument("--threads", type=int, default=2,
+                    help="PyTorch CPU 线程数；小图模型默认 2 线程")
 args = parser.parse_args()
 
 resume_path = repository_path(args.resume) if args.resume else None

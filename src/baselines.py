@@ -16,10 +16,27 @@ def shortest_fastest_action(actions):
     )[0]
 
 
-def evaluate_heuristic(env):
+def greedy_estimate_action(actions, cfg):
+    feasible = list(enumerate(actions[:-1]))
+    if not feasible:
+        return len(actions) - 1
+    return max(
+        feasible,
+        key=lambda item: (
+            cfg.reward_beta_completion
+            - cfg.reward_beta_delay * item[1].delay / cfg.reward_delay_ref
+            - cfg.reward_beta_energy * item[1].energy / cfg.reward_energy_ref
+        ),
+    )[0]
+
+
+def evaluate_heuristic(env, method="shortest_fastest"):
     env.reset()
     done = False
     while not done:
-        action = shortest_fastest_action(env.actions)
+        if method == "shortest_fastest":
+            action = shortest_fastest_action(env.actions)
+        else:
+            action = greedy_estimate_action(env.actions, env.cfg)
         _, _, done, _ = env.step(action)
     return env.metrics()

@@ -11,6 +11,8 @@ EVALUATION_METRICS = (
     "objective_score",
     "episode_reward",
     "task_success_rate",
+    "acceptance_rate",
+    "deadline_miss_rate",
     "avg_delay_s",
     "avg_energy_j",
     "mean_load_variance",
