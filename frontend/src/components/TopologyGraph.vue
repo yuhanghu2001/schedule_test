@@ -4,43 +4,75 @@ import { storage } from '../utils/storage'
 import NodeGlyph from './NodeGlyph.vue'
 const props = defineProps({ snapshot: Object, selected: Object })
 const emit = defineEmits(['select-node'])
-const arrow = useId().replace(/:/g, '')
+const id = useId().replace(/:/g, '')
 const svg = ref(null),
   dragging = ref(null),
-  positions = ref({}),
-  layouts = storage.get('layout', {})
+  positions = ref({})
+const layouts = storage.get('layout', {})
+const edges = computed(
+  () => props.snapshot?.nodes.filter((n) => n.kind === 'edge') || [],
+)
+const columns = computed(() => Math.ceil(edges.value.length / 2))
+const columnX = (i) => 270 + (i * 1000) / Math.max(1, columns.value - 1)
+const groupWidth = computed(() => Math.min(208, 1240 / columns.value - 4))
+const groups = computed(() =>
+  Array.from({ length: columns.value }, (_, i) => ({
+    x: columnX(i),
+    terminals: props.snapshot.terminals
+      .filter(
+        (t) =>
+          edges.value.findIndex((n) => n.id === t.access_edge) %
+            columns.value ===
+          i,
+      )
+      .sort((a, b) => a.access_edge - b.access_edge || a.id - b.id),
+  })),
+)
+const height = computed(() =>
+  Math.max(
+    760,
+    ...groups.value.map((g) => 650 + Math.ceil(g.terminals.length / 4) * 65),
+  ),
+)
 const bucket = computed(
   () =>
-    'layered-' +
-    (props.snapshot?.nodes.filter((n) => n.kind === 'edge').length || 0),
+    'three-tier-' +
+    edges.value.length +
+    '-' +
+    (props.snapshot?.terminals.length || 0),
 )
 watch(
   bucket,
   (key) => {
-    positions.value = { ...(layouts[key] || {}) }
+    positions.value = { ...layouts[key] }
   },
   { immediate: true },
 )
 const items = computed(() => {
   if (!props.snapshot) return []
-  const edges = props.snapshot.nodes.filter((n) => n.kind === 'edge'),
-    cols = Math.ceil(edges.length / 2)
-  const nodes = props.snapshot.nodes.map((n) => ({
-    ...n,
-    key: 'n' + n.id,
-    x:
-      n.kind === 'cloud'
-        ? 500
-        : 70 + ((n.id % cols) * 860) / Math.max(1, cols - 1),
-    y: n.kind === 'cloud' ? 85 : 225 + Math.floor(n.id / cols) * 125,
-  }))
-  props.snapshot.terminals.forEach((n, i) =>
-    nodes.push({
+  const nodes = props.snapshot.nodes.map((n) => {
+    const index = edges.value.findIndex((e) => e.id === n.id)
+    return {
       ...n,
-      kind: 'terminal',
-      key: 't' + n.id,
-      x: 35 + ((i % 12) * 930) / 11,
-      y: 465 + Math.floor(i / 12) * 62,
+      key: 'n' + n.id,
+      x: n.kind === 'cloud' ? 755 : columnX(index % columns.value),
+      y:
+        n.kind === 'cloud'
+          ? 110
+          : 300 + Math.floor(index / columns.value) * 160,
+    }
+  })
+  groups.value.forEach((group) =>
+    group.terminals.forEach((t, i) => {
+      const count = Math.min(4, group.terminals.length - Math.floor(i / 4) * 4)
+      nodes.push({
+        ...t,
+        kind: 'terminal',
+        key: 't' + t.id,
+        x:
+          group.x + (((i % 4) - (count - 1) / 2) * (groupWidth.value - 16)) / 4,
+        y: 665 + Math.floor(i / 4) * 65,
+      })
     }),
   )
   return nodes.map((n) => ({ ...n, ...positions.value[n.key] }))
@@ -48,53 +80,104 @@ const items = computed(() => {
 const map = computed(() =>
   Object.fromEntries(items.value.map((n) => [n.key, n])),
 )
+const frames = computed(() =>
+  groups.value
+    .filter((g) => g.terminals.length)
+    .map((g) => {
+      const points = g.terminals.map((t) => map.value['t' + t.id])
+      return {
+        x: Math.min(...points.map((p) => p.x)) - 24,
+        y: Math.min(...points.map((p) => p.y)) - 29,
+        width:
+          Math.max(...points.map((p) => p.x)) -
+          Math.min(...points.map((p) => p.x)) +
+          48,
+        height:
+          Math.max(...points.map((p) => p.y)) -
+          Math.min(...points.map((p) => p.y)) +
+          67,
+      }
+    }),
+)
 const chosen = computed(() => props.selected || props.snapshot?.last_decision)
-const pathLines = computed(() => {
-  if (!chosen.value || chosen.value.destination === -2) return []
+const active = computed(() => chosen.value && chosen.value.destination >= 0)
+const pathPairs = computed(() => {
+  if (!active.value) return []
   const keys = [
     't' + chosen.value.source,
     ...chosen.value.path.map((n) => 'n' + n),
   ]
-  return keys
-    .slice(1)
-    .map((key, i) => [map.value[keys[i]], map.value[key]])
-    .filter((p) => p[0] && p[1])
+  return keys.slice(1).map((key, i) => [map.value[keys[i]], map.value[key]])
 })
-function pathEnd(a, b) {
+function boundary(a, b) {
+  const centerY =
+    b.y + (b.kind === 'cloud' ? -22 : b.kind === 'terminal' ? -8 : 0)
   const dx = b.x - a.x,
-    dy = b.y - a.y
-  const distance = Math.hypot(dx, dy)
-  const offset = b.kind === 'cloud' ? 80 : 50
-  return {
-    x: b.x - (dx / distance) * offset,
-    y: b.y - (dy / distance) * offset,
+    dy = centerY - a.y
+  const halfWidth = b.kind === 'cloud' ? 98 : b.kind === 'terminal' ? 19 : 48
+  const halfHeight = b.kind === 'cloud' ? 64 : b.kind === 'terminal' ? 22 : 53
+  const ratio = Math.min(halfWidth / Math.abs(dx), halfHeight / Math.abs(dy))
+  return { x: b.x - dx * ratio, y: centerY - dy * ratio }
+}
+function routePath(a, b) {
+  const start = boundary(b, a),
+    end = boundary(a, b)
+  return `M${start.x},${start.y} L${end.x},${end.y}`
+}
+function networkPath(link) {
+  const a = map.value['n' + link.source],
+    b = map.value['n' + link.target]
+  if (link.kind === 'cloud')
+    return `M${b.x},${b.y + 40} Q${a.x},${a.y - 110} ${a.x},${a.y - 50}`
+  const start = boundary(b, a),
+    end = boundary(a, b)
+  if (Math.abs(a.y - b.y) < 5 && Math.abs(a.x - b.x) > 250) {
+    const bend = a.y === 300 ? 220 : 545
+    return `M${start.x},${start.y} Q${(a.x + b.x) / 2},${bend} ${end.x},${end.y}`
   }
+  return `M${start.x},${start.y} L${end.x},${end.y}`
 }
-function color(l) {
-  const v = Math.max(l.background_fwd, l.background_rev)
-  return l.status === 'flapped'
-    ? '#59738f'
-    : v > 0.7
-      ? '#f06465'
-      : v > 0.4
-        ? '#ffa94c'
-        : '#009fe8'
+function radioPath(t) {
+  const terminal = map.value['t' + t.id],
+    edge = map.value['n' + t.access_edge]
+  const upper = edge.y < 380,
+    bus = upper ? 585 : 607,
+    side = edge.x - (upper ? 65 : 0)
+  return `M${edge.x - (upper ? 48 : 0)},${edge.y + (upper ? 0 : 50)} H${side} V${bus} H${terminal.x} V${terminal.y - 20}`
 }
-function start(e, n) {
-  dragging.value = n
-  e.currentTarget.setPointerCapture(e.pointerId)
+function color(link) {
+  const load = Math.max(link.background_fwd, link.background_rev)
+  return link.status === 'flapped'
+    ? '#647b94'
+    : load > 0.7
+      ? '#ff6978'
+      : load > 0.4
+        ? '#ffba62'
+        : '#00d5ff'
 }
-function move(e) {
+function involved(node) {
+  return (
+    active.value &&
+    (node.kind === 'terminal'
+      ? chosen.value.source === node.id
+      : chosen.value.path.includes(node.id))
+  )
+}
+function start(event, node) {
+  dragging.value = node
+  event.currentTarget.setPointerCapture(event.pointerId)
+}
+function move(event) {
   if (!dragging.value) return
-  const p = svg.value.createSVGPoint()
-  p.x = e.clientX
-  p.y = e.clientY
-  const point = p.matrixTransform(svg.value.getScreenCTM().inverse())
+  const point = svg.value.createSVGPoint()
+  point.x = event.clientX
+  point.y = event.clientY
+  const local = point.matrixTransform(svg.value.getScreenCTM().inverse())
   positions.value = {
     ...positions.value,
     [dragging.value.key]: {
-      x: Math.max(30, Math.min(970, point.x)),
-      y: Math.max(40, Math.min(530, point.y)),
+      x: Math.max(28, Math.min(1372, local.x)),
+      y: Math.max(65, Math.min(height.value - 40, local.y)),
     },
   }
 }
@@ -106,156 +189,157 @@ function end() {
 }
 </script>
 <template>
-  <div class="topology layered-topology">
+  <div class="topology layered-topology tiered-topology">
     <div v-if="!snapshot" class="empty-graph">正在加载真实网络拓扑…</div>
     <template v-else
-      ><div class="topology-meta">
-        <span>▣ 端侧任务源：{{ snapshot.terminals.length }} 个</span
-        ><span>▤ 边缘计算节点：{{ snapshot.nodes.length - 1 }} 个</span
-        ><span>☁ 云端节点：1 个</span>
-      </div>
-      <div class="topology-key">
-        <span>☁ 云节点</span><span>▤ 边缘节点</span><span>▣ 端设备</span
-        ><span class="good">➜ 当前调度路径</span>
-      </div>
-      <svg
+      ><svg
         ref="svg"
-        viewBox="0 0 1000 565"
+        :viewBox="`0 0 1400 ${height}`"
         @pointermove="move"
         @pointerup="end"
         @pointercancel="end"
       >
         <defs>
           <marker
-            :id="arrow"
+            :id="id + '-arrow'"
             viewBox="0 0 10 10"
             refX="9"
             refY="5"
             markerWidth="5"
             markerHeight="5"
-            orient="auto-start-reverse"
+            orient="auto"
           >
-            <path d="M0 0L10 5L0 10Z" fill="#52ffbf" />
+            <path d="M0 0L10 5L0 10Z" fill="#72ff66" />
           </marker>
+          <linearGradient :id="id + '-node'" x2="0" y2="1">
+            <stop stop-color="#075078" />
+            <stop offset=".35" stop-color="#052a49" />
+            <stop offset="1" stop-color="#03192f" />
+          </linearGradient>
         </defs>
-        <path
-          d="M0 560L500 365L1000 560M150 565L500 365L850 565M325 565L500 365L675 565M0 520H1000M0 545H1000"
-          stroke="#0877aa"
-          opacity=".16"
-          fill="none"
-        />
+        <g class="layer-dividers"><path d="M20 220H1380M20 565H1380" /></g>
         <g class="radio-links">
-          <line
+          <path
             v-for="t in snapshot.terminals"
             :key="t.id"
-            :x1="map['t' + t.id].x"
-            :y1="map['t' + t.id].y - 12"
-            :x2="map['n' + t.access_edge].x"
-            :y2="map['n' + t.access_edge].y + 20"
-            stroke="#0475b0"
-            stroke-width="1"
-            opacity=".36"
-          />
+            :d="radioPath(t)"
+            :data-source="'U' + t.id"
+            :data-target="'E' + t.access_edge"
+          >
+            <title>
+              U{{ t.id }} → E{{ t.access_edge }} ·
+              {{ t.radio_rate_mbps.toFixed(1) }} Mbps
+            </title>
+          </path>
         </g>
-        <g v-for="(l, i) in snapshot.links" :key="i" class="topology-link">
-          <line
-            :x1="map['n' + l.source].x"
-            :y1="map['n' + l.source].y"
-            :x2="map['n' + l.target].x"
-            :y2="map['n' + l.target].y"
-            :stroke="color(l)"
-            :stroke-width="l.kind === 'cloud' ? 1 : 1.8"
-            :stroke-opacity="l.kind === 'cloud' ? 0.4 : 0.75"
-            :stroke-dasharray="l.status === 'flapped' ? '5 5' : ''"
-          />
-          <title>
-            {{ l.source }} → {{ l.target }} · {{ l.rate_mbps.toFixed(1) }} Mbps
-            · 拥塞 {{ (100 * l.background_fwd).toFixed(1) }}% ·
-            {{ l.status === 'flapped' ? '已断开' : '连通' }}
-          </title>
+        <g v-for="(link, i) in snapshot.links" :key="i" class="topology-link">
+          <path
+            :d="networkPath(link)"
+            :stroke="color(link)"
+            :class="[
+              'physical-link',
+              link.kind,
+              { 'failed-link': link.status === 'flapped' },
+            ]"
+            :data-source="link.source"
+            :data-target="link.target"
+          >
+            <title>
+              {{ link.source }} ↔ {{ link.target }} ·
+              {{ link.rate_mbps.toFixed(1) }} Mbps · 拥塞
+              {{
+                (
+                  100 * Math.max(link.background_fwd, link.background_rev)
+                ).toFixed(1)
+              }}% · {{ link.status === 'flapped' ? '失效' : '连通' }}
+            </title>
+          </path>
+        </g>
+        <g class="terminal-frames">
+          <rect v-for="(frame, i) in frames" :key="i" v-bind="frame" rx="12" />
         </g>
         <g class="active-path">
-          <line
-            v-for="(p, i) in pathLines"
+          <path
+            v-for="(pair, i) in pathPairs"
             :key="i"
-            :x1="p[0].x"
-            :y1="p[0].y"
-            :x2="pathEnd(p[0], p[1]).x"
-            :y2="pathEnd(p[0], p[1]).y"
+            :d="routePath(...pair)"
             class="route-line"
-            :marker-end="`url(#${arrow})`"
+            :marker-end="`url(#${id}-arrow)`"
           />
         </g>
         <g
-          v-for="n in items"
-          :key="n.key"
-          class="graph-node"
+          v-for="node in items"
+          :key="node.key"
+          :class="[
+            'graph-node',
+            'scene-' + node.kind,
+            { involved: involved(node) },
+          ]"
           role="button"
           tabindex="0"
-          :aria-label="n.kind === 'terminal' ? '终端 U' + n.id : n.label"
-          @pointerdown="start($event, n)"
-          @click="emit('select-node', n)"
-          @keydown.enter="emit('select-node', n)"
+          :aria-label="
+            node.kind === 'terminal' ? '终端 U' + node.id : node.label
+          "
+          @pointerdown="start($event, node)"
+          @click="emit('select-node', node)"
+          @keydown.enter="emit('select-node', node)"
         >
           <rect
-            v-if="n.kind !== 'terminal'"
-            :x="n.x - (n.kind === 'cloud' ? 70 : 36)"
-            :y="n.y - 32"
-            :width="n.kind === 'cloud' ? 140 : 72"
-            :height="n.kind === 'cloud' ? 88 : 84"
-            rx="8"
-            :class="['node-back', { involved: chosen?.path?.includes(n.id) }]"
+            v-if="node.kind === 'edge'"
+            :x="node.x - 48"
+            :y="node.y - 50"
+            width="96"
+            height="100"
+            rx="12"
+            class="node-back"
+            :style="{ fill: `url(#${id}-node)` }"
           />
           <foreignObject
             :x="
-              n.x - (n.kind === 'cloud' ? 55 : n.kind === 'terminal' ? 20 : 31)
+              node.x -
+              (node.kind === 'cloud' ? 100 : node.kind === 'terminal' ? 21 : 36)
             "
             :y="
-              n.y - (n.kind === 'cloud' ? 52 : n.kind === 'terminal' ? 20 : 32)
+              node.y -
+              (node.kind === 'cloud' ? 84 : node.kind === 'terminal' ? 27 : 49)
             "
-            :width="n.kind === 'cloud' ? 110 : n.kind === 'terminal' ? 40 : 62"
-            :height="n.kind === 'cloud' ? 88 : n.kind === 'terminal' ? 32 : 50"
-            ><NodeGlyph :kind="n.kind"
+            :width="
+              node.kind === 'cloud' ? 200 : node.kind === 'terminal' ? 42 : 72
+            "
+            :height="
+              node.kind === 'cloud' ? 150 : node.kind === 'terminal' ? 38 : 58
+            "
+            ><NodeGlyph :kind="node.kind"
           /></foreignObject>
           <text
-            :x="n.x"
-            :y="
-              n.y + (n.kind === 'cloud' ? 45 : n.kind === 'terminal' ? 26 : 27)
-            "
+            v-if="node.kind !== 'cloud'"
+            :x="node.x"
+            :y="node.y + (node.kind === 'terminal' ? 29 : 17)"
             class="node-name"
           >
-            {{
-              n.kind === 'cloud'
-                ? 'C0（云端）'
-                : n.kind === 'terminal'
-                  ? 'U' + n.id
-                  : 'E' + n.id
-            }}
+            {{ (node.kind === 'terminal' ? 'U' : 'E') + node.id }}
           </text>
           <text
-            v-if="n.kind === 'edge'"
-            :x="n.x"
-            :y="n.y + 44"
-            :class="['node-profile', n.profile]"
+            v-if="node.kind === 'edge'"
+            :x="node.x"
+            :y="node.y + 40"
+            :class="['node-profile', node.profile]"
           >
-            {{ n.profile === 'balanced' ? '中继' : n.profile }}
+            {{ node.profile === 'balanced' ? '中继' : node.profile }}
           </text>
           <title>
-            {{ n.label
+            {{ node.label
             }}{{
-              n.kind === 'terminal'
-                ? ` · 接入 E${n.access_edge} · ${n.radio_rate_mbps.toFixed(1)} Mbps`
-                : ` · ${n.profile} · CPU/NPU/FPGA ${n.resource_used.map((v, i) => ((v / n.speed[i]) * 100).toFixed(1) + '%').join(' / ')}`
+              node.kind === 'terminal'
+                ? ` · 接入 E${node.access_edge} · ${node.radio_rate_mbps.toFixed(1)} Mbps`
+                : ` · CPU/NPU/FPGA ${node.resource_used.map((v, i) => ((100 * v) / node.speed[i]).toFixed(1) + '%').join(' / ')}`
             }}
           </title>
         </g>
+        <text x="700" :y="height - 15" class="group-caption">
+          终端按真实接入节点分组 · 每条连接均来自当前仿真快照
+        </text>
       </svg>
-      <div class="graph-legend">
-        <span><i style="background: #009fe8"></i>正常</span
-        ><span><i style="background: #ffa94c"></i>拥塞</span
-        ><span><i style="background: #f06465"></i>高拥塞</span
-        ><span>虚线：失效链路</span><span>拖动微调 · 点击查看</span>
-      </div></template
-    >
+    </template>
   </div>
 </template>

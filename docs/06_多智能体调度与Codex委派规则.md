@@ -64,8 +64,8 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | 系统架构与前后端接口契约（REST / WebSocket 推演流 / 离线回放与在线交互） | 接口 Schema、事件协议、状态机设计 | 大脑主导；需细化或核验时调 `gpt-6.2-astra` | `high`–`xhigh` | `read-only` / `workspace-write` | 保持最简直接架构，直接复用 `src/` 调度与环境引擎，不复制仿真逻辑 |
 | 后端服务开发（封装模型推理、仿真步进、历史 `results/` 回放与控制 API） | FastAPI / WebSocket 路由、状态序列化、推演控制 | `gpt-6.2-sol` | `medium`（并发推演/实时流用 `high`） | `workspace-write` | 不写冗余防御式校验层、鉴权或多余抽象 |
-| 前端核心可视化界面（云–边–端动态多跳拓扑图、链路拥塞热力、多跳路径高亮、四目标实时仪表盘与控制栏） | 页面布局、拓扑图与图表组件、交互联动 | `gpt-6.1-terra`（视觉布局/图交互）或 `gpt-6.2-sol`（复杂状态/数据层） | `medium`–`high` | `workspace-write` | 视觉呈现交 `gpt-6.1-terra`，重逻辑数据层可交 `gpt-6.2-sol` |
-| 前端视觉验收、排版微调与渲染 Bug 修复 | 对照页面截图检查遮挡、层级、配色、响应适配 | `gpt-6.1-terra` | `medium`–`high` | `read-only`（审图） / `workspace-write`（修复） | 必须配合 `-i <截图路径>` 直接输入页面截图 |
+| 前端核心可视化界面（云–边–端动态多跳拓扑图、链路拥塞热力、多跳路径高亮、四目标实时仪表盘与控制栏） | 页面布局、拓扑图与图表组件、交互联动 | `gpt-6.1-terra`（视觉布局/图交互）或 `gpt-6.2-sol`（复杂状态/数据层） | `medium`–`high` | `workspace-write` | 视觉呈现交 `gpt-6.1-terra`，重逻辑数据层可交 `gpt-6.2-sol`；严禁添加装饰性小图标，必须沿用 `dashboard.css` 深蓝大屏风格 |
+| 前端视觉验收、排版微调与渲染 Bug 修复 | 对照页面截图检查遮挡、层级、配色、响应适配 | `gpt-6.1-terra` | `medium`–`high` | `read-only`（审图） / `workspace-write`（修复） | 必须配合 `-i <截图路径>` 直接输入页面截图，核查无装饰小图标且风格与现有页面一致 |
 | 前后端联调与端到端排错（字段对齐、推演卡顿、WebSocket 同步异常） | 跨端定位与修复 | `gpt-6.2-sol`（常规）或 `gpt-6.2-astra`（复杂时序并发） | `high` | `workspace-write` | — |
 | 静态文案、类型同步、简单样式/配置调整 | 常量、配色、小修布局 | `gpt-6-luna` | `low` | `workspace-write` | — |
 

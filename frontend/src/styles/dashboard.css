@@ -93,18 +93,9 @@ a {
   color: #52e2ac;
   background: #03293c;
 }
-.status-pill i {
-  width: 9px;
-  height: 9px;
-  background: #43dca4;
-  border-radius: 50%;
-}
 .status-pill.disconnected {
   color: #ffbc6a;
   border-color: #9a6736;
-}
-.status-pill.disconnected i {
-  background: #ffbc6a;
 }
 .system-status time {
   font-variant-numeric: tabular-nums;
@@ -204,11 +195,6 @@ a {
   font-weight: 600;
   white-space: nowrap;
 }
-.monitor-title > span {
-  font-size: 25px;
-  color: #61d7ff;
-  text-shadow: 0 0 6px #31c6ff77;
-}
 .monitor-title small {
   margin-left: auto;
   font-size: 11px;
@@ -248,17 +234,10 @@ a {
 .dashboard-kpi > div {
   min-width: 0;
 }
-.dashboard-kpi span:not(.kpi-symbol) {
+.dashboard-kpi span {
   font-size: 14px;
   color: #c7dffb;
   white-space: nowrap;
-}
-.kpi-symbol {
-  font-family: Arial;
-  font-size: 35px;
-  color: #38bfff;
-  width: 42px;
-  text-align: center;
 }
 .dashboard-kpi strong {
   display: block;
@@ -323,11 +302,6 @@ a {
   gap: 7px;
   font-size: 12px;
   white-space: nowrap;
-}
-.distribution-bars i {
-  height: 18px;
-  border-radius: 3px;
-  display: block;
 }
 .distribution-bars b {
   font-size: 15px;
@@ -503,14 +477,6 @@ a {
   color: #9cbcd9;
   flex-shrink: 0;
 }
-.network-footer {
-  display: flex;
-  justify-content: space-between;
-  padding: 6px 12px;
-  font-size: 11px;
-  border-top: 1px solid #17466d;
-  color: #9fbedb;
-}
 .compact-task-table {
   flex: 1;
   min-height: 0;
@@ -643,10 +609,6 @@ a {
   border-radius: 5px;
   font-size: 15px;
 }
-.strategy-name > span {
-  color: #44c4ff;
-  font-size: 21px;
-}
 .strategy-name small {
   margin-left: auto;
   white-space: nowrap;
@@ -657,12 +619,6 @@ a {
   align-items: center;
   font-size: 16px;
   gap: 10px;
-}
-.strategy-param > span {
-  color: #46caff;
-  font-size: 24px;
-  width: 30px;
-  text-align: center;
 }
 .strategy-param b {
   color: #3ce5ef;
@@ -687,12 +643,6 @@ a {
   background: linear-gradient(140deg, #07436b, #04213e);
   border-radius: 8px;
   padding: 13px 2px;
-}
-.strategy-flow > div > span {
-  font-size: 30px;
-  color: #46d0ff;
-  display: block;
-  margin-bottom: 7px;
 }
 .strategy-flow b {
   font-size: 13px;
@@ -955,15 +905,11 @@ a {
     padding: 13px 10px;
     gap: 10px;
   }
-  .dashboard-kpi span:not(.kpi-symbol) {
+  .dashboard-kpi span {
     font-size: 12px;
   }
   .dashboard-kpi strong {
     font-size: 26px;
-  }
-  .kpi-symbol {
-    font-size: 30px;
-    width: 30px;
   }
   .task-totals {
     font-size: 11px;
@@ -987,9 +933,6 @@ a {
   .distribution-bars > div {
     font-size: 11px;
     gap: 6px;
-  }
-  .distribution-bars i {
-    height: 15px;
   }
   .distribution-bars b {
     font-size: 13px;
@@ -1046,9 +989,6 @@ a {
   }
   .strategy-flow b {
     font-size: 12px;
-  }
-  .strategy-flow > div > span {
-    font-size: 26px;
   }
   .topology-meta {
     font-size: 10px;
@@ -1230,10 +1170,6 @@ a {
 .strategy-flow > div {
   padding: 10px 3px;
 }
-.strategy-flow > div > span {
-  font-size: 27px;
-  margin-bottom: 4px;
-}
 .strategy-note {
   line-height: 1.5;
 }
@@ -1266,9 +1202,6 @@ a {
   }
   .strategy-flow > div {
     padding: 8px 2px;
-  }
-  .strategy-flow > div > span {
-    font-size: 23px;
   }
   .strategy-param {
     font-size: 13px;
@@ -1683,7 +1616,156 @@ a {
 }
 
 /* Header hierarchy after simplifying navigation. */
-.title-frame h1{font-size:46px;letter-spacing:3px}.title-frame{padding-top:9px}.status-pill{font-size:20px;font-weight:600;padding:8px 14px}.status-pill i{width:11px;height:11px}
-@media(max-width:1700px){.title-frame h1{font-size:40px;letter-spacing:2px}.title-frame{padding-top:10px}.status-pill{font-size:18px;padding:7px 11px}.system-status{top:20px}}
-@media(max-width:1250px){.title-frame h1{font-size:30px}.status-pill{font-size:16px}}
-@media(max-width:850px){.title-frame h1{font-size:23px}.title-frame{padding-top:17px}}
+.title-frame h1 {
+  font-size: 46px;
+  letter-spacing: 3px;
+}
+.title-frame {
+  padding-top: 9px;
+}
+.status-pill {
+  font-size: 20px;
+  font-weight: 600;
+  padding: 8px 14px;
+}
+@media (max-width: 1700px) {
+  .title-frame h1 {
+    font-size: 40px;
+    letter-spacing: 2px;
+  }
+  .title-frame {
+    padding-top: 10px;
+  }
+  .status-pill {
+    font-size: 18px;
+    padding: 7px 11px;
+  }
+  .system-status {
+    top: 20px;
+  }
+}
+@media (max-width: 1250px) {
+  .title-frame h1 {
+    font-size: 30px;
+  }
+  .status-pill {
+    font-size: 16px;
+  }
+}
+@media (max-width: 850px) {
+  .title-frame h1 {
+    font-size: 23px;
+  }
+  .title-frame {
+    padding-top: 17px;
+  }
+}
+/* Reference topology: cloud, two routing rows, grouped terminals. */
+.network-panel {
+  flex: 2.35;
+}
+.tiered-topology {
+  background: radial-gradient(ellipse at 53% 24%, #06355188, transparent 62%);
+}
+.tiered-topology svg {
+  overflow: visible;
+}
+
+.tiered-topology .layer-dividers path {
+  fill: none;
+  stroke: #3ebada;
+  stroke-dasharray: 5 4;
+  stroke-opacity: 0.65;
+}
+
+.tiered-topology .physical-link {
+  fill: none;
+  stroke-width: 2;
+  stroke-opacity: 0.8;
+}
+.tiered-topology .physical-link.cloud {
+  stroke-width: 3;
+  stroke-opacity: 0.9;
+}
+.tiered-topology .physical-link.edge {
+  stroke-dasharray: 8 6;
+}
+.tiered-topology .physical-link.failed-link {
+  stroke-dasharray: 2 7;
+  stroke-opacity: 0.65;
+}
+.tiered-topology .topology-link:hover .physical-link {
+  stroke-width: 5;
+  stroke-opacity: 1;
+}
+.tiered-topology .radio-links path {
+  fill: none;
+  stroke: #00cfff;
+  stroke-width: 2;
+  stroke-opacity: 0.65;
+}
+.tiered-topology .terminal-frames rect {
+  fill: #031c35;
+  fill-opacity: 0.7;
+  stroke: #1cbee9;
+  stroke-width: 1.4;
+}
+.tiered-topology .node-back {
+  fill: unset;
+  stroke: #36cbff;
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 3px #1172a4);
+}
+.tiered-topology .scene-cloud .node-glyph {
+  filter: drop-shadow(0 0 7px #21cdff);
+}
+.tiered-topology .node-name {
+  font-size: 25px;
+  font-weight: 700;
+}
+.tiered-topology .scene-terminal .node-name {
+  font-size: 20px;
+}
+.tiered-topology .node-profile {
+  font-size: 23px;
+  fill: #00e6ff;
+}
+.tiered-topology .node-profile.NPU,
+.tiered-topology .node-profile.FPGA {
+  fill: #ffcb70;
+}
+.tiered-topology .involved .node-back {
+  stroke: #72ff66;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 7px #50f83b);
+}
+.tiered-topology .scene-terminal.involved .node-glyph {
+  filter: drop-shadow(0 0 5px #57ff62);
+}
+.tiered-topology .scene-terminal.involved .node-glyph path {
+  stroke: #72ff66;
+  fill: #0b5e2a;
+}
+.tiered-topology .scene-terminal.involved .node-name {
+  fill: #72ff66;
+}
+.tiered-topology .route-line {
+  stroke: #72ff66 !important;
+  stroke-width: 4 !important;
+  fill: none;
+  filter: drop-shadow(0 0 4px #50ff54);
+}
+.tiered-topology .group-caption {
+  text-anchor: middle;
+  fill: #82aacb;
+  font-size: 13px;
+}
+
+.tiered-topology .graph-node:focus-visible {
+  outline: none;
+  filter: drop-shadow(0 0 5px #8af2ff);
+}
+
+.tiered-topology .scene-cloud.involved .node-glyph {
+  filter: drop-shadow(0 0 7px #72ff66);
+}

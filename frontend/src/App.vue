@@ -22,9 +22,9 @@ onUnmounted(() => clearInterval(timer))
     <header class="screen-header">
       <div class="title-frame"><h1>云边端异构资源协同调度系统</h1></div>
       <div class="system-status">
-        <span class="status-pill" :class="{ disconnected: !app.health }"
-          ><i></i>{{ app.health ? '系统已连接' : '后端未连接' }}</span
-        ><time>{{ clock() }}</time>
+        <span class="status-pill" :class="{ disconnected: !app.health }">{{
+          app.health ? '系统已连接' : '后端未连接'
+        }}</span><time>{{ clock() }}</time>
       </div>
     </header>
     <nav class="screen-nav" aria-label="主导航">

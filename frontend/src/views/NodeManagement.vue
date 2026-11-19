@@ -139,7 +139,7 @@ onMounted(load)
   >
     <section class="monitor-panel node-config-list">
       <h2 class="monitor-title">
-        <span>❖</span>节点列表与属性配置<small>{{
+        节点列表与属性配置<small>{{
           dirty ? '有未保存的更改' : '当前环境配置'
         }}</small>
       </h2>
@@ -195,7 +195,7 @@ onMounted(load)
             }}</template></el-table-column
           ><el-table-column label="状态" width="92"
             ><template #default
-              ><span class="good">● 可用</span></template
+              ><span class="good">可用</span></template
             ></el-table-column
           ><el-table-column
             v-for="(r, i) in resources"
@@ -245,14 +245,14 @@ onMounted(load)
     </section>
     <aside class="node-config-detail">
       <section class="monitor-panel">
-        <h2 class="monitor-title"><span>▤</span>节点详情</h2>
+        <h2 class="monitor-title">节点详情</h2>
         <div v-if="selected" class="node-details-body">
           <div class="node-detail-identity">
             <NodeGlyph :kind="selected.kind" />
             <h3>
               {{ label(selected) }} <small>（{{ kindName(selected) }}）</small>
             </h3>
-            <span class="good">● 可用</span>
+            <span class="good">可用</span>
           </div>
           <dl>
             <div>
@@ -284,8 +284,7 @@ onMounted(load)
       </section>
       <section class="monitor-panel node-edit-panel">
         <h2 class="monitor-title">
-          <span>▧</span
-          >{{ selected?.kind === 'terminal' ? '端侧属性配置' : '算力资源配置' }}
+          {{ selected?.kind === 'terminal' ? '端侧属性配置' : '算力资源配置' }}
         </h2>
         <el-form
           v-if="selected"

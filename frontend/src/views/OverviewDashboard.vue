@@ -190,7 +190,7 @@ onBeforeUnmount(() => {
   >
     <div class="dashboard-left">
       <section class="monitor-panel run-overview">
-        <h2 class="monitor-title"><span>❖</span>调度运行概况</h2>
+        <h2 class="monitor-title">调度运行概况</h2>
         <div class="overview-body">
           <div class="dashboard-kpis">
             <div
@@ -203,7 +203,6 @@ onBeforeUnmount(() => {
               :key="k[1]"
               class="dashboard-kpi"
             >
-              <span class="kpi-symbol">{{ ['✓', '◷', 'ϟ', '▱'][i] }}</span>
               <div>
                 <span>{{ k[0] }}</span><strong
                   >{{
@@ -233,20 +232,17 @@ onBeforeUnmount(() => {
             </h3>
             <div class="distribution-bars">
               <div v-for="(name, i) in taskNames" :key="name">
-                <i
+                <span
                   :style="{
-                    background: [
+                    color: [
                       '#a49eff',
                       '#ffc36c',
                       '#51dfb3',
                       '#68adff',
                       '#8782ff',
                     ][i],
-                    opacity: taskCounts[i] ? 1 : 0.35,
                   }"
-                ></i
-                ><span>{{ name }}</span
-                ><b
+                  >{{ name }}</span><b
                   >{{
                     snapshot?.task_index
                       ? fmt((taskCounts[i] / snapshot.task_index) * 100, 1)
@@ -259,7 +255,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <section class="monitor-panel utilization">
-        <h2 class="monitor-title"><span>◎</span>资源利用率</h2>
+        <h2 class="monitor-title">资源利用率</h2>
         <div class="util-body">
           <div
             v-for="(name, i) in resources"
@@ -273,7 +269,7 @@ onBeforeUnmount(() => {
             <span>{{ fmt(used[i], 1) }}%</span>
           </div>
           <div class="trend-heading">
-            ◆ 资源利用率趋势 <small>最近 40 次快照 · 全部计算节点</small>
+            资源利用率趋势 <small>最近 40 次快照 · 全部计算节点</small>
           </div>
           <ResourceTrend :samples="samples" />
         </div>
@@ -282,15 +278,15 @@ onBeforeUnmount(() => {
     <div class="dashboard-center">
       <section class="monitor-panel network-panel">
         <h2 class="monitor-title">
-          <span>✣</span>动态云边端网络拓扑
+          动态云边端网络拓扑
           <small :class="playing ? 'good' : ''">{{
             playing
-              ? '● 仿真运行中'
+              ? '仿真运行中'
               : session
                 ? snapshot?.done
                   ? '本轮已结束'
-                  : '● 推演已暂停'
-                : '● 初始预览'
+                  : '推演已暂停'
+                : '初始预览'
           }}</small>
         </h2>
         <div class="overview-controls">
@@ -367,18 +363,10 @@ onBeforeUnmount(() => {
           :selected="selectedPath"
           @select-node="inspect"
         />
-        <div class="network-footer">
-          <span
-            >时隙 {{ snapshot?.slot ?? 0 }} /
-            {{ snapshot?.episode_slots ?? '—' }} · 已调度
-            {{ snapshot?.task_index ?? 0 }} /
-            {{ snapshot?.total_tasks ?? '—' }}</span
-          ><span>{{ snapshot?.links.length ?? 0 }} 条真实链路</span>
-        </div>
       </section>
       <section class="monitor-panel dispatch-panel">
         <h2 class="monitor-title">
-          <span>▤</span>任务调度明细<small>点击任务查看实际路径</small>
+          任务调度明细<small>点击任务查看实际路径</small>
         </h2>
         <TaskFlowTable
           :snapshot="snapshot"
@@ -390,9 +378,7 @@ onBeforeUnmount(() => {
     <div class="dashboard-right">
       <section class="monitor-panel node-status">
         <h2 class="monitor-title">
-          <span>❖</span>计算节点状态<small
-            >全部 {{ cards.length }} 个节点</small
-          >
+          计算节点状态<small>全部 {{ cards.length }} 个节点</small>
         </h2>
         <div class="node-card-list">
           <button
@@ -422,7 +408,7 @@ onBeforeUnmount(() => {
                             : node.profile
                     }}）</em
                   ></strong
-                ><span class="good">● 在线</span>
+                ><span class="good">在线</span>
               </div>
               <div
                 v-for="(r, i) in node.kind === 'terminal' ? [] : resources"
@@ -448,19 +434,18 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <section class="monitor-panel strategy-panel">
-        <h2 class="monitor-title"><span>⚙</span>调度策略</h2>
+        <h2 class="monitor-title">调度策略</h2>
         <div class="strategy-body">
           <div class="strategy-name">
-            <span>✦</span><b>{{ strategy }}</b
-            ><small :class="playing ? 'good' : 'muted'">{{
+            <b>{{ strategy }}</b><small :class="playing ? 'good' : 'muted'">{{
               playing ? '运行中' : session ? '已就绪' : '未启动'
             }}</small>
           </div>
           <div class="strategy-param">
-            <span>▱</span>路径最大跳数：<b>{{ config?.max_hops ?? '—' }}</b>
+            路径最大跳数：<b>{{ config?.max_hops ?? '—' }}</b>
           </div>
           <div class="strategy-param">
-            <span>⟳</span>拓扑动态更新：<b>{{
+            拓扑动态更新：<b>{{
               snapshot?.topology_period_slots
                 ? '每 ' + snapshot.topology_period_slots + ' 时隙'
                 : '—'
@@ -473,19 +458,19 @@ onBeforeUnmount(() => {
           >
             {{ activeCheckpoint }}
           </div>
-          <div class="workflow-heading">◆ GAT-PPO 调度原理</div>
+          <div class="workflow-heading">GAT-PPO 调度原理</div>
           <div class="strategy-flow">
             <template
               v-for="(s, i) in [
-                ['▤', '任务', '请求'],
-                ['♧', 'GAT', '拓扑感知'],
-                ['✣', 'PPO', '联合决策'],
-                ['▷', '执行与', '反馈'],
+                ['任务', '请求'],
+                ['GAT', '拓扑感知'],
+                ['PPO', '联合决策'],
+                ['执行与', '反馈'],
               ]"
               :key="i"
               ><span v-if="i" class="flow-arrow">➜</span>
               <div>
-                <span>{{ s[0] }}</span><b>{{ s[1] }}<br />{{ s[2] }}</b>
+                <b>{{ s[0] }}<br />{{ s[1] }}</b>
               </div></template
             >
           </div>
