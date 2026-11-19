@@ -35,7 +35,9 @@ results/
 
 ```text
 schedule_test/
-├── AGENTS.md                         # 严格代码规范：简单、无防御式编程
+├── AGENTS.md                         # 全员共享硬规则：简单、无防御式编程与执行边界
+├── GEMINI.md                         # Gemini 大脑入口（自动引入 Codex 调度规则）
+├── CLAUDE.md                         # Claude 大脑入口（自动引入 AGENTS 与 Codex 调度规则）
 ├── README.md
 ├── requirements.txt
 ├── environment-gpu.yml               # RTX 50 系独立 GPU 环境
@@ -44,7 +46,8 @@ schedule_test/
 │   ├── 02_数学模型与C1-C24约束.md       # 24条约束的统一正确表达
 │   ├── 03_实验设计与指标.md             # 场景、消融、泛化、实验协议
 │   ├── 04_数据字典与实现边界.md         # 关键变量、原型简化项
-│   └── 05_训练奖励与PPO对齐说明.md      # 可加奖励、全局状态与固定评估
+│   ├── 05_训练奖励与PPO对齐说明.md      # 可加奖励、全局状态与固定评估
+│   └── 06_多智能体调度与Codex委派规则.md # 大脑调度 Codex 的模型、推理档位与审核闭环
 ├── memory/                           # AI 对话与工作记录
 ├── src/
 │   ├── train.py                      # 完整训练、续训、日志和绘图入口
