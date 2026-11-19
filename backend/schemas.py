@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Preset = Literal["default", "high_congestion", "small_smoke"]
-ModelType = Literal["gat", "flat", "shuffled_gat"]
+ModelType = Literal["gatppo", "ppo", "shuffled_gat", "gat", "flat", "gatpppo"]
 
 
 class EnvRequest(BaseModel):
@@ -41,7 +41,7 @@ class LinkPerturbation(BaseModel):
 
 class TrainingCreate(EnvRequest):
     run_name: str | None = None
-    model_type: ModelType = "gat"
+    model_type: ModelType = "gatppo"
     env_config_id: int | None = None
     episodes: int = Field(default=1000, gt=0)
     device: Literal["auto", "cpu", "cuda"] = "cpu"

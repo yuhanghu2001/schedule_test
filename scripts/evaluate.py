@@ -11,7 +11,7 @@ import torch
 from src.config import load_config
 from src.config import Config
 from src.evaluation import evaluate_episode
-from src.models.policy import GATPPO
+from src.models.policy import GATPPO, MODEL_NAMES
 
 
 def new_run_dir():
@@ -30,7 +30,7 @@ parser.add_argument("--threads", type=int, default=4)
 args = parser.parse_args()
 
 checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-model_type = checkpoint["model_type"]
+model_type = MODEL_NAMES[checkpoint["model_type"]]
 training_cfg = Config(**checkpoint["config"])
 cfg = load_config(args.config) if args.config else training_cfg
 evaluation_seed = args.seed if args.seed is not None else cfg.evaluation_seed
@@ -52,7 +52,7 @@ model = GATPPO(
     gat_hidden=training_cfg.gat_hidden_dim,
     actor_hidden=training_cfg.actor_hidden_dim,
     critic_hidden=training_cfg.critic_hidden_dim,
-    use_gat=model_type != "flat",
+    use_gat=model_type != "ppo",
 ).to(device)
 model.load_state_dict(checkpoint["model"])
 model.eval()

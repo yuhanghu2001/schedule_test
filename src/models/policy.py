@@ -5,6 +5,12 @@ from torch.distributions import Categorical
 from .gat import GATEncoder
 
 
+MODEL_NAMES = {
+    "gatppo": "gatppo", "gatpppo": "gatppo", "ppo": "ppo",
+    "gat": "gatppo", "flat": "ppo", "shuffled_gat": "shuffled_gat",
+}
+
+
 class GATPPO(nn.Module):
     def __init__(self, gat_hidden=256, actor_hidden=128, critic_hidden=128,
                  use_gat=True, global_dim=9):

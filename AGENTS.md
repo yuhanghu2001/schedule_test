@@ -30,12 +30,12 @@
 - `src/tasks.py`：五类任务及任务流。
 - `src/environment.py`：任务到达、候选调度、状态转移和四目标统计。
 - `src/continuous.py`：Dinkelbach 上行功率和 KKT 并发算力子问题。
-- `src/ablation.py`：打乱图观测消融，不改变真实动作和物理约束。
+- `src/environment.py` 中的观测包装：打乱图观测消融，不改变真实动作和物理约束。
 - `src/baselines.py`：传统启发式基线。
 - `src/models/gat.py`：自实现两层边特征 GAT。
 - `src/models/policy.py`：GAT-PPO Actor/Critic。
 - `src/algorithms/ppo.py`：采样、GAE、PPO-Clip 更新。
-- `src/train.py`：完整训练、续训、日志、checkpoint 和五指标曲线入口。
+- `src/train.py`：GAT-PPO、PPO 单算法及双算法对比训练、续训、日志、checkpoint 和五指标曲线入口。
 - `scripts/`：smoke、评估、多种子聚合和环境查看。
 - `backend/`：FastAPI + MySQL 上位机后端服务，直接复用 `src/` 核心环境与训练引擎。
 - `frontend/`：Vue 3 + Element Plus + ECharts + `localStorage` 上位机可视化前端。

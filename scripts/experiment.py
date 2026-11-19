@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 
 from src.config import load_config
+from src.models.policy import MODEL_NAMES
 
 
 METRICS = (
@@ -43,13 +44,14 @@ parser.add_argument("--episodes", type=int, default=100)
 parser.add_argument("--seeds", nargs="+", type=int, default=list(range(10)))
 parser.add_argument(
     "--methods", nargs="+",
-    choices=("gat", "flat", "shuffled_gat", "heuristic"),
-    default=("gat", "flat", "shuffled_gat", "heuristic"),
+    choices=("gatppo", "ppo", "shuffled_gat", "heuristic", "gat", "flat"),
+    default=("gatppo", "ppo", "shuffled_gat", "heuristic"),
 )
 parser.add_argument("--run-dir", help="组合实验目录；默认创建北京时间结果目录")
 parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
 parser.add_argument("--threads", type=int, default=4)
 args = parser.parse_args()
+args.methods = [MODEL_NAMES[method] if method != "heuristic" else method for method in args.methods]
 
 cfg = load_config(args.config)
 evaluation_config_source = args.evaluation_config or args.config
@@ -94,7 +96,7 @@ for method in args.methods:
                 "--device", args.device,
                 "--threads", str(args.threads),
             ], check=True)
-            checkpoint = seed_dir / f"last_{method}_ppo.pt"
+            checkpoint = seed_dir / f"last_{method}.pt"
             command = [
                 sys.executable, "-m", "scripts.evaluate",
                 "--checkpoint", str(checkpoint),

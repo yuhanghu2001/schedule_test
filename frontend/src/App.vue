@@ -1,6 +1,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAppStore } from './stores/app'
+const route = useRoute()
 const app = useAppStore(),
   now = ref(new Date())
 let timer
@@ -29,6 +31,7 @@ onUnmounted(() => clearInterval(timer))
     </header>
     <nav class="screen-nav" aria-label="主导航">
       <router-link to="/" exact-active-class="active">系统总览</router-link
+      ><router-link to="/topology" active-class="active">拓扑监控</router-link
       ><router-link to="/nodes" active-class="active">节点管理</router-link>
       <div class="secondary-nav">
         <span :class="app.health?.db_connected ? 'good' : 'warn'"
@@ -36,6 +39,11 @@ onUnmounted(() => clearInterval(timer))
         >
       </div>
     </nav>
-    <main class="console-main"><router-view /></main>
+    <main
+      class="console-main"
+      :class="{ 'topology-main': route.path === '/topology' }"
+    >
+      <router-view />
+    </main>
   </div>
 </template>

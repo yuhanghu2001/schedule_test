@@ -12,11 +12,11 @@ import numpy as np
 from sqlalchemy import select
 import torch
 
-from src.ablation import model_environment
 from src.algorithms.ppo import PPOTrainer
 from src.config import Config
-from src.environment import EdgeEnv
+from src.environment import EdgeEnv, model_environment
 from src.evaluation import evaluate_policy
+from src.models.policy import MODEL_NAMES
 from src.plotting import load_jsonl, save_run_plots
 
 from ..config import REPO_ROOT, RESULTS_DIR
@@ -112,7 +112,7 @@ def _append_record(file, record):
 
 
 def _run_paths(results_dir):
-    return sorted(results_dir.glob("*/train_config.json"), reverse=True)
+    return sorted(results_dir.rglob("train_config.json"), reverse=True)
 
 
 def _disk_run(config_path, config, metrics, scores):
@@ -160,8 +160,8 @@ def _scores(records):
 
 def list_checkpoints(results_dir=RESULTS_DIR):
     return [
-        {"name": path.name, "path": str(path.resolve()), "run_dir": path.parent.name}
-        for path in sorted(results_dir.glob("*/*.pt"), reverse=True)
+        {"name": path.name, "path": str(path.resolve()), "run_dir": path.parent.relative_to(results_dir).as_posix()}
+        for path in sorted(results_dir.rglob("*.pt"), reverse=True)
     ]
 
 
@@ -171,7 +171,7 @@ def list_fs_runs(results_dir=RESULTS_DIR):
         config = _read_config(path)
         records = read_run_metrics(path.parent)
         runs.append({
-            "run_id": config.get("run_id", path.parent.name),
+            "run_id": path.parent.relative_to(results_dir).as_posix(),
             **_disk_run(path, config, records["training"], _scores(records["evaluation"])),
             "latest_metrics": records["training"][-1] if records["training"] else None,
         })
@@ -261,7 +261,7 @@ class TrainManager:
             run_dir = self.results_dir / timestamp.strftime(RUN_TIMESTAMP)
         return run_dir
 
-    def start_run(self, cfg, *, episodes, model_type="gat", device="cpu", threads=2,
+    def start_run(self, cfg, *, episodes, model_type="gatppo", device="cpu", threads=2,
                   resume_path=None, run_name=None, env_config_id=None, run_dir=None):
         resume_path = str(REPO_ROOT / resume_path) if resume_path else None
         checkpoint = load_checkpoint(resume_path) if resume_path else None
@@ -272,6 +272,7 @@ class TrainManager:
             model_type = checkpoint["model_type"]
             start_episode = checkpoint["episode"]
 
+        model_type = MODEL_NAMES[model_type]
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         run_id = uuid4().hex
@@ -280,8 +281,8 @@ class TrainManager:
             run_dir = Path(run_dir).resolve() if custom_dir else self._new_run_dir()
             if custom_dir and run_dir.is_dir() and any(run_dir.iterdir()):
                 raise FileExistsError(run_dir)
-            best = run_dir / f"best_{model_type}_ppo.pt"
-            last = run_dir / f"last_{model_type}_ppo.pt"
+            best = run_dir / f"best_{model_type}.pt"
+            last = run_dir / f"last_{model_type}.pt"
             config = {
                 "run_id": run_id,
                 "run_name": run_name or run_dir.name,

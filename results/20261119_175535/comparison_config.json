@@ -1,0 +1,237 @@
+{
+  "models": [
+    "gatppo",
+    "ppo"
+  ],
+  "config_source": "default",
+  "config": {
+    "seed": 42,
+    "evaluation_seed": 1042,
+    "n_terminals": 24,
+    "n_edges": 12,
+    "episode_slots": 20,
+    "arrival_rate": 18.0,
+    "burst_prob": 0.15,
+    "burst_multiplier": 2.5,
+    "hotspot_fraction": 0.3,
+    "hotspot_share": 0.6,
+    "topology_period_slots": 5,
+    "undirected_edge_links": 18,
+    "max_hops": 4,
+    "k_routes_per_destination": 3,
+    "link_flap_prob": 0.12,
+    "congestion_ar_coef": 0.65,
+    "congestion_step_noise": 0.15,
+    "link_spike_prob": 0.15,
+    "link_spike_min": 0.15,
+    "link_spike_max": 0.35,
+    "link_rate_fluctuation": 0.25,
+    "slot_seconds": 1.0,
+    "congestion_min": 0.1,
+    "congestion_max": 0.6,
+    "congestion_noise": 0.15,
+    "congestion_realized_max": 0.95,
+    "link_rate_min_mbps": 500.0,
+    "link_rate_max_mbps": 2000.0,
+    "cloud_rate_min_mbps": 50.0,
+    "cloud_rate_max_mbps": 200.0,
+    "radio_rate_min_mbps": 60.0,
+    "radio_rate_max_mbps": 180.0,
+    "service_deployment": [
+      [
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        0,
+        1
+      ],
+      [
+        0,
+        1,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        1,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    ],
+    "edge_speed_matrix": [
+      [
+        150.0,
+        520.0,
+        150.0
+      ],
+      [
+        150.0,
+        150.0,
+        520.0
+      ],
+      [
+        420.0,
+        180.0,
+        180.0
+      ],
+      [
+        120.0,
+        120.0,
+        120.0
+      ],
+      [
+        150.0,
+        520.0,
+        150.0
+      ],
+      [
+        150.0,
+        150.0,
+        520.0
+      ],
+      [
+        420.0,
+        180.0,
+        180.0
+      ],
+      [
+        120.0,
+        120.0,
+        120.0
+      ],
+      [
+        150.0,
+        520.0,
+        150.0
+      ],
+      [
+        150.0,
+        150.0,
+        520.0
+      ],
+      [
+        420.0,
+        180.0,
+        180.0
+      ],
+      [
+        120.0,
+        120.0,
+        120.0
+      ]
+    ],
+    "cloud_speed": [
+      8000.0,
+      12000.0,
+      8000.0
+    ],
+    "terminal_radio_rates_mbps": [],
+    "node_memory_gb": [],
+    "node_storage_gb": [],
+    "node_queue_capacity": [],
+    "deadline_slack_min": 1.8,
+    "deadline_slack_max": 3.0,
+    "radio_bandwidth_mhz": 20.0,
+    "uplink_max_power_w": 0.5,
+    "uplink_circuit_power_w": 0.1,
+    "dinkelbach_tolerance": 0.001,
+    "dinkelbach_max_iterations": 4,
+    "compute_priority_exponent": 1.0,
+    "compute_degradation_max": 0.2,
+    "reward_beta_completion": 2.0,
+    "reward_beta_delay": 1.0,
+    "reward_beta_energy": 1.0,
+    "reward_beta_load": 1.0,
+    "reward_penalty_incomplete": 1.0,
+    "reward_penalty_invalid": 1.0,
+    "reward_penalty_conditional_reject": 1.0,
+    "reward_delay_ref": 1.0,
+    "reward_energy_ref": 3.0,
+    "reward_variance_ref": 0.0058,
+    "reward_version": "v6_dynamic_edge_only",
+    "observation_version": "v4_edge_only_4d_edges",
+    "gat_hidden_dim": 256,
+    "actor_hidden_dim": 128,
+    "critic_hidden_dim": 128,
+    "actor_learning_rate": 0.0003,
+    "critic_learning_rate": 0.001,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "ppo_clip": 0.2,
+    "ppo_epochs": 5,
+    "ppo_batch_size": 64,
+    "vf_coef": 0.5,
+    "ent_coef": 0.01,
+    "max_grad_norm": 0.5,
+    "eval_interval": 25,
+    "evaluation_seed_count": 5
+  },
+  "episodes": 1000,
+  "device": "cpu",
+  "torch_threads": 2
+}

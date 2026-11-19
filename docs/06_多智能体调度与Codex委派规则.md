@@ -55,7 +55,7 @@
 | 仿真环境动力学核心改造（时隙延续、多跳路由、不确定性、奖励结算） | `src/environment.py`、`src/topology.py`、`src/tasks.py` | `gpt-6.2-astra`（强耦合）或 `gpt-6.2-sol`（局部新增） | `high`–`xhigh` | `workspace-write` | 核验 `x/y/g/f/p_up/z/z_service` 语义、`deadline_s` 联动、奖励 `2:1:1:1` |
 | GAT / PPO 网络结构与训练更新逻辑改造 | `src/models/gat.py`、`src/models/policy.py`、`src/algorithms/ppo.py` | `gpt-6.2-astra` | `high`–`xhigh` | `workspace-write` | 不引入 PyG、Ray、Gym 等重型依赖 |
 | 训练不收敛、指标异常、KL/梯度问题深度诊断 | `results/*/train_metrics.jsonl`、`src/algorithms/ppo.py`、`src/environment.py` | `gpt-6.2-astra` | `xhigh`（卡壳升 `max`） | 先 `read-only` 定位，再 `workspace-write` 修复 | 必须基于真实日志与代码证据，不盲改超参 |
-| 启发式基线、消融实验、评估聚合、训练曲线绘图 | `src/baselines.py`、`src/ablation.py`、`src/evaluation.py`、`src/plotting.py`、`scripts/` | `gpt-6.2-sol` | `medium`（跨文件接口调整用 `high`） | `workspace-write` | smoke 与开发验证只用系统临时目录，不写 `results/` |
+| 启发式基线、消融实验、评估聚合、训练曲线绘图 | `src/baselines.py`、`src/train.py`、`src/evaluation.py`、`src/plotting.py`、`scripts/` | `gpt-6.2-sol` | `medium`（跨文件接口调整用 `high`） | `workspace-write` | smoke 与开发验证只用系统临时目录，不写 `results/` |
 | 参数配置微调、常规单测补充、实验结果统计提取 | `src/config.py`、`tests/`、`results/*/metrics.json` | `gpt-6-luna`（统计/微调）或 `gpt-6.2-sol`（补单测） | `low`–`medium` | `read-only` / `workspace-write` | 仅写核心功能测试，不引入复杂 mock 框架 |
 
 ### 4.2 前后端分离可视化上位机调度系统（后续规划）

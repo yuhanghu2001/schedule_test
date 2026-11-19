@@ -3,8 +3,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from .ablation import model_environment
-from .environment import EdgeEnv
+from .environment import EdgeEnv, model_environment
 
 
 EVALUATION_METRICS = (

@@ -61,7 +61,7 @@ npm start
 - 访问 http://localhost:8888/api/health，`db_connected: true` 表示数据库连接成功。
 - 已有进程占用端口时，在原启动终端按 `Ctrl+C` 后再运行，启动脚本不会杀掉其它实例。
 
-总览支持真实拓扑预览、创建会话、单任务/整时隙推进、自动推演、暂停、重置、选择 Checkpoint、节点详情和任务路径高亮。主导航为“系统总览、节点管理”，训练工作台和实验记录导航入口已移除，原页面路由仍保留；完整沙盘 `/sandbox` 与算法评估 `/compare` 保留原路由。节点管理可编辑端侧无线速率、边缘/云端算力、内存、存储、队列容量和服务部署，保存到本机环境草稿后用于新建推演及训练。组件、指标口径及实际截图见 [上位机系统说明](docs/07_上位机可视化调度系统设计.md#5-深蓝监控总览2026-11-19)。
+总览支持真实拓扑预览、创建会话、单任务/整时隙推进、自动推演、暂停、重置、选择 Checkpoint、节点详情和任务路径高亮。主导航为“系统总览、拓扑监控、节点管理”，训练工作台和实验记录导航入口已移除，原页面路由仍保留；完整沙盘 `/sandbox` 与算法评估 `/compare` 保留原路由。独立拓扑监控页 `/topology` 采用参考图的点阵地图、透视网格、发光平台及云端/边缘服务区域布局，完整显示当前预览快照中的全部节点与真实链路，支持节点详情；推演操作继续在系统总览中使用。节点管理可编辑端侧无线速率、边缘/云端算力、内存、存储、队列容量和服务部署，保存到本机环境草稿后用于新建推演及训练。组件、指标口径及实际截图见 [上位机系统说明](docs/07_上位机可视化调度系统设计.md#5-深蓝监控总览2026-11-19)。
 
 ## 训练设备与线程
 
@@ -70,6 +70,38 @@ npm start
 训练过程可用 `Ctrl+C` 手动中断。训练入口会先关闭并刷新 JSONL，再根据已完成回合重建 `training_metrics.png` 和已有的 `evaluation_metrics.png`，同时保存 last checkpoint。
 
 环境中的候选动作枚举、多跳路径和物理约束仍是顺序相关的 Python/NumPy 逻辑，保留在 CPU；当前默认模型为两层256维GAT、128维Actor/Critic头，每轮含20个时隙并更新5个PPO epoch，因图规模小且逐样本更新，CPU（2线程）单轮约 2s，快于 GPU 的频繁拷贝与核函数启动开销。
+
+## GAT-PPO / PPO 统一训练入口
+
+在仓库根目录运行，`--episodes` 是每个算法的训练回合数：
+
+```bash
+# 完整 GAT-PPO
+conda run --no-capture-output -n gatppo python src/train.py --model gatppo --episodes 1000
+
+# 单独 PPO（MLP 节点编码，不执行 GAT 消息传播）
+conda run --no-capture-output -n gatppo python src/train.py --model ppo --episodes 1000
+
+# 一次运行两者：相同配置/种子/回合预算，依次独立训练并生成对比图
+conda run --no-capture-output -n gatppo python src/train.py --model gatppo and ppo --episodes 1000
+```
+
+`--model "gatppo and ppo"` 也可用；`gatpppo` 作为完整算法的拼写别名。历史 `gat`、`flat` 名称及对应权重仍可读取。`ablation.py` 已删除，原图观测打乱包装移入 `environment.py`，已有 `shuffled_gat` 实验保持可运行。
+
+单算法使用 `results/YYYYMMDD_HHMMSS/`，保存 `best_gatppo.pt` / `last_gatppo.pt` 或 `best_ppo.pt` / `last_ppo.pt`、配置、JSONL 日志及原有曲线。双算法输出：
+
+```text
+results/YYYYMMDD_HHMMSS/
+├── comparison_config.json
+├── gatppo/                         # GAT-PPO 的权重、配置、日志和曲线
+├── ppo/                            # PPO 的权重、配置、日志和曲线
+├── training_comparison.png         # 两算法训练五指标叠加图
+└── evaluation_comparison.png       # 两算法固定验证五指标叠加图
+```
+
+训练图含累计奖励、完成率、时延、能耗和负载均衡度；验证图含目标分数、完成率、时延、能耗和负载方差，阴影是同一模型的固定验证种子间标准差。它不表示多次训练种子间置信区间，也不替代独立最终测试。
+
+可用 `--config default/high_congestion/small_smoke`、`--seed`、`--device`、`--threads` 设置参数。单算法续训使用 `--resume 路径 --episodes 总回合数`；`--output` 和 `--resume` 只用于单算法。Ctrl+C 保留已完成回合与 last 权重，双算法模式仅对已有记录绘图，不伪造未运行算法的数据。开发验证必须指定系统临时目录 `--run-dir`，不写入正式 results。
 
 ## 文件概览
 
@@ -99,12 +131,11 @@ schedule_test/
 ├── frontend/                         # Vue 3 + Vite + Element Plus + ECharts 前端
 │   └── src/                          # 训练工作台、推演沙盘、对比实验室、实验档案与拓扑画布
 ├── src/
-│   ├── train.py                      # 完整训练、续训、日志和绘图入口
+│   ├── train.py                      # GAT-PPO/PPO 单算法、双算法对比、续训与绘图入口
 │   ├── config.py                     # 全部参数与三套Python场景配置
 │   ├── tasks.py                      # 任务生成
 │   ├── topology.py                   # 动态连通图与简单路由
 │   ├── continuous.py                 # Dinkelbach 功率与 KKT 算力子问题
-│   ├── ablation.py                   # 打乱图结构消融环境
 │   ├── baselines.py                  # 最短最快与估计一步奖励贪心基线
 │   ├── environment.py                # 状态、合法动作、更新、统计
 │   ├── evaluation.py                 # 固定种子贪心评估与指标聚合

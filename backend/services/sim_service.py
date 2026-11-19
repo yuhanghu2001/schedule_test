@@ -7,12 +7,11 @@ from uuid import uuid4
 import numpy as np
 import torch
 
-from src.ablation import model_environment, shuffle_graph_observation, ShuffledGraphEnv
 from src.baselines import greedy_estimate_action, shortest_fastest_action
 from src.config import Config, load_config
-from src.environment import EdgeEnv
+from src.environment import EdgeEnv, model_environment, shuffle_graph_observation, ShuffledGraphEnv
 from src.models.gat import GATEncoder
-from src.models.policy import GATPPO
+from src.models.policy import GATPPO, MODEL_NAMES
 from src.topology import _activate_link
 
 from ..config import REPO_ROOT
@@ -63,13 +62,14 @@ def checkpoint_config(checkpoint):
 
 
 def build_model(cfg, model_type, checkpoint=None, *, inference=False):
+    model_type = MODEL_NAMES[model_type]
     device = "meta" if inference else "cpu"
     with torch.device(device):
         model = GATPPO(
             gat_hidden=cfg.gat_hidden_dim,
             actor_hidden=cfg.actor_hidden_dim,
             critic_hidden=cfg.critic_hidden_dim,
-            use_gat=model_type != "flat",
+            use_gat=model_type != "ppo",
         )
         if checkpoint is not None:
             state = checkpoint["model"]

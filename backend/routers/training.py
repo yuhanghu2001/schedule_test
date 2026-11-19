@@ -78,7 +78,7 @@ def filesystem_runs(request: Request):
     return list_fs_runs(request.app.state.train_manager.results_dir)
 
 
-@training.get("/fs-runs/{run_dir_name}/metrics")
+@training.get("/fs-runs/{run_dir_name:path}/metrics")
 def filesystem_run_metrics(run_dir_name: str, request: Request):
     run_dir = request.app.state.train_manager.results_dir / run_dir_name
     if not (run_dir / "train_config.json").is_file():
