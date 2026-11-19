@@ -18,8 +18,9 @@ class MultihopActivationTest(unittest.TestCase):
 
         self.assertGreaterEqual(low_arrival_metrics["feasible_task_rate"], 0.9)
         self.assertGreaterEqual(full_metrics["acceptance_rate"], 0.9)
-        self.assertGreaterEqual(full_metrics["mean_path_length"], 0.5)
-        self.assertLessEqual(full_metrics["mean_path_length"], 1.5)
+        self.assertGreaterEqual(full_metrics["mean_path_length"], 1.0)
+        self.assertLessEqual(full_metrics["mean_path_length"], cfg.max_hops + 1)
+        self.assertEqual(full_metrics["local_execution_rate"], 0.0)
         self.assertGreater(full_metrics["mean_hops_accepted"], 0.0)
         expected_path_length = (
             full_metrics["mean_hops_accepted"]

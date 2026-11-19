@@ -36,7 +36,9 @@
 - `src/algorithms/ppo.py`：采样、GAE、PPO-Clip 更新。
 - `src/train.py`：完整训练、续训、日志、checkpoint 和五指标曲线入口。
 - `scripts/`：smoke、评估、多种子聚合和环境查看。
-- `docs/`：完整开发说明、公式约束、实验计划。
+- `backend/`：FastAPI + MySQL 上位机后端服务，直接复用 `src/` 核心环境与训练引擎。
+- `frontend/`：Vue 3 + Element Plus + ECharts + `localStorage` 上位机可视化前端。
+- `docs/`：完整开发说明、公式约束、实验计划与上位机系统设计。
 - `memory/`：Codex、Claude 等 AI 的对话与工作记录。
 
 ## 代码风格

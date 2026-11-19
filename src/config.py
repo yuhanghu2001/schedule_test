@@ -6,20 +6,27 @@ class Config:
     # 随机种子与任务规模
     seed: int = 42
     evaluation_seed: int = 1042
-    n_terminals: int = 20
-    n_edges: int = 6
+    n_terminals: int = 24
+    n_edges: int = 12
     episode_slots: int = 20
-    arrival_rate: float = 10.0
+    arrival_rate: float = 18.0
     burst_prob: float = 0.15
     burst_multiplier: float = 2.5
     hotspot_fraction: float = 0.3
     hotspot_share: float = 0.6
 
     # 动态拓扑与链路
-    topology_period_slots: int = 20
-    undirected_edge_links: int = 9
+    topology_period_slots: int = 5
+    undirected_edge_links: int = 18
     max_hops: int = 4
-    k_routes_per_destination: int = 2
+    k_routes_per_destination: int = 3
+    link_flap_prob: float = 0.12
+    congestion_ar_coef: float = 0.65
+    congestion_step_noise: float = 0.15
+    link_spike_prob: float = 0.15
+    link_spike_min: float = 0.15
+    link_spike_max: float = 0.35
+    link_rate_fluctuation: float = 0.25
     slot_seconds: float = 1.0
     congestion_min: float = 0.1
     congestion_max: float = 0.6
@@ -34,28 +41,30 @@ class Config:
 
     # 服务部署与异构计算资源
     service_deployment: tuple[tuple[int, ...], ...] = (
-        (1, 1, 1, 0, 0),
-        (0, 0, 1, 1, 1),
-        (1, 0, 0, 1, 0),
-        (1, 1, 1, 0, 0),
-        (0, 0, 1, 1, 1),
+        (1, 1, 0, 0, 0),
+        (0, 0, 1, 1, 0),
+        (0, 0, 0, 1, 1),
+        (1, 0, 0, 0, 0),
+        (1, 1, 0, 0, 0),
+        (0, 0, 1, 0, 1),
+        (0, 1, 0, 1, 0),
+        (0, 0, 1, 0, 0),
+        (1, 0, 1, 0, 0),
+        (0, 0, 0, 1, 0),
         (0, 1, 0, 0, 1),
+        (0, 0, 0, 0, 1),
     )
     edge_speed_matrix: tuple[tuple[float, float, float], ...] = (
-        (150.0, 500.0, 150.0),
-        (150.0, 150.0, 500.0),
-        (400.0, 200.0, 200.0),
-        (150.0, 500.0, 150.0),
-        (150.0, 150.0, 500.0),
-        (400.0, 200.0, 200.0),
-    )
+        (150.0, 520.0, 150.0),
+        (150.0, 150.0, 520.0),
+        (420.0, 180.0, 180.0),
+        (120.0, 120.0, 120.0),
+    ) * 3
     cloud_speed: tuple[float, float, float] = (8000.0, 12000.0, 8000.0)
-    local_speed: tuple[float, float, float] = (12.0, 16.0, 6.0)
 
     # 任务时限与卸载
     deadline_slack_min: float = 1.8
     deadline_slack_max: float = 3.0
-    must_offload_rate: float = 0.6
 
     # 连续优化子问题
     radio_bandwidth_mhz: float = 20.0
@@ -76,10 +85,10 @@ class Config:
     reward_penalty_conditional_reject: float = 1.0
     reward_delay_ref: float = 1.0
     reward_energy_ref: float = 3.0
-    # 随机非拒绝策略(1042—1046)：D̄_rand=0.083，t̄_rand=0.71s。
-    reward_variance_ref: float = 0.012
-    reward_version: str = "v5_carryover_uncertainty"
-    observation_version: str = "v3_slot_arrivals_carryover"
+    # 随机非拒绝策略(1042—1046)：D̄_rand=0.08608214，t̄_rand=0.82071578s。
+    reward_variance_ref: float = 0.0058
+    reward_version: str = "v6_dynamic_edge_only"
+    observation_version: str = "v4_edge_only_4d_edges"
 
     # GAT-PPO 网络与训练
     gat_hidden_dim: int = 256
@@ -105,12 +114,13 @@ def load_config(name: str = "default") -> Config:
         return Config()
     if name == "high_congestion":
         return replace(
-            Config(), topology_period_slots=8, undirected_edge_links=8,
-            congestion_min=0.45, congestion_max=0.8, arrival_rate=14.0,
+            Config(), topology_period_slots=4, undirected_edge_links=16,
+            congestion_min=0.45, congestion_max=0.8, arrival_rate=24.0,
+            link_flap_prob=0.18, link_spike_prob=0.25, link_rate_fluctuation=0.35,
         )
     if name == "small_smoke":
         return replace(
-            Config(), episode_slots=4, arrival_rate=3.0,
+            Config(), episode_slots=4, arrival_rate=5.0,
             topology_period_slots=2, ppo_batch_size=16,
         )
     raise ValueError(f"未知配置名称: {name}")

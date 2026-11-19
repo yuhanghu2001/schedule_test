@@ -13,7 +13,7 @@ class AblationBaselineTest(unittest.TestCase):
         obs = {
             "nodes": np.arange(12).reshape(4, 3),
             "adjacency": np.arange(16).reshape(4, 4),
-            "edges": np.arange(32).reshape(4, 4, 2),
+            "edges": np.arange(64).reshape(4, 4, 4),
             "candidate_targets": np.array([0, 2]),
         }
         permutation = np.array([2, 0, 1, 3])

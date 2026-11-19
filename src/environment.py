@@ -4,13 +4,13 @@ import numpy as np
 
 from .config import Config
 from .tasks import sample_tasks
-from .topology import make_topology, simple_routes
+from .topology import fluctuate_rates, fluctuate_topology, make_topology, simple_routes
 from .continuous import allocate_compute, choose_uplink_power
 
 
 @dataclass
 class Action:
-    destination: int  # -2: 拒绝, -1: 端侧本地, 0..M-1: 边缘, M: 云
+    destination: int  # -2: 拒绝, 0..M-1: 边缘, M: 云
     resource: int     # 0: CPU, 1: NPU, 2: FPGA
     path: tuple[int, ...]
     delay: float
@@ -44,21 +44,23 @@ class EdgeEnv:
         self.rng = np.random.default_rng(cfg.seed)
         self.cloud = cfg.n_edges
         self.n_graph_nodes = cfg.n_edges + 1
-        self.speed = np.vstack((cfg.edge_speed_matrix, cfg.cloud_speed)).astype(np.float32)
-        self.service_deployment = np.array(cfg.service_deployment, dtype=bool)
+        edge_ids = np.arange(cfg.n_edges)
+        edge_speeds = np.asarray(cfg.edge_speed_matrix)[edge_ids % len(cfg.edge_speed_matrix)]
+        self.speed = np.vstack((edge_speeds, cfg.cloud_speed)).astype(np.float32)
+        self.service_deployment = np.asarray(cfg.service_deployment, dtype=bool)[
+            edge_ids % len(cfg.service_deployment)
+        ]
         self.mem_cap = np.array([32.] * cfg.n_edges + [128.], dtype=np.float32)
         self.storage_cap = np.array([1000.] * cfg.n_edges + [4000.], dtype=np.float32)
         self.queue_cap = np.array([60.] * cfg.n_edges + [80.], dtype=np.float32)
-        self.local_speed = np.array(cfg.local_speed, dtype=np.float32)
-        self.local_mem_cap = np.full(cfg.n_terminals, 8.0, dtype=np.float32)
-        self.local_storage_cap = np.full(cfg.n_terminals, 128.0, dtype=np.float32)
-        self.local_queue_cap = np.full(cfg.n_terminals, 12.0, dtype=np.float32)
         self.resource_power = np.array([10., 18., 12.], dtype=np.float32)
         self.support = np.array([[1, 1, 1, 1, 1], [1, 1, 1, 0, 0], [0, 0, 1, 1, 1]], dtype=bool)
         self.reset()
 
     def reset(self):
         c = self.cfg
+        # 接收动作决定扰动采样次数，独立的执行随机流让同种子策略共享链路轨迹。
+        self.execution_rng = np.random.default_rng(self.rng.integers(2**63))
         self.radio_rates = self.rng.uniform(
             c.radio_rate_min_mbps, c.radio_rate_max_mbps, c.n_terminals,
         )
@@ -77,7 +79,6 @@ class EdgeEnv:
             min_edge_compute_gflops=float(self.speed[:self.cloud].min()),
             deadline_slack_min=c.deadline_slack_min,
             deadline_slack_max=c.deadline_slack_max,
-            must_offload_rate=c.must_offload_rate,
         )
         self.radio_channel_gain = (
             2.0 ** (self.radio_rates / c.radio_bandwidth_mhz) - 1.0
@@ -86,10 +87,6 @@ class EdgeEnv:
         self.idx = 0
         self.slot = 0
         self.slot_resource_used = np.zeros_like(self.speed)
-        self.slot_local_resource_used = np.zeros((c.n_terminals, 3), dtype=np.float32)
-        self.slot_local_mem_used = np.zeros(c.n_terminals, dtype=np.float32)
-        self.slot_local_storage_used = np.zeros(c.n_terminals, dtype=np.float32)
-        self.slot_local_queues = np.zeros(c.n_terminals, dtype=np.float32)
         self.slot_mem_used = np.zeros(self.n_graph_nodes, dtype=np.float32)
         self.slot_storage_used = np.zeros(self.n_graph_nodes, dtype=np.float32)
         self.slot_queues = np.zeros(self.n_graph_nodes, dtype=np.float32)
@@ -98,7 +95,6 @@ class EdgeEnv:
         self.active_assignments = []
         self.assignments = []
         self.carryover_resource_used = np.zeros_like(self.speed)
-        self.carryover_local_resource_used = np.zeros((c.n_terminals, 3), dtype=np.float32)
         self.slot_step_count = 0
         self.accepted = 0
         self.sum_delay = 0.
@@ -114,24 +110,17 @@ class EdgeEnv:
         self.conditional_rejects = 0
         self.forced_rejects = 0
         self.action_count_sum = 0
-        self.local_executions = 0
         self.edge_executions = 0
         self.cloud_executions = 0
         return self.observe()
 
     def _new_topology(self):
-        c = self.cfg
-        self.adj, self.rates, self.background, self.prop = make_topology(
-            self.rng, c.n_edges, c.undirected_edge_links,
-            (c.link_rate_min_mbps, c.link_rate_max_mbps),
-            (c.cloud_rate_min_mbps, c.cloud_rate_max_mbps),
-            (c.congestion_min, c.congestion_max),
-        )
-        self.forward_power = np.zeros_like(self.rates)
-        for a in range(self.n_graph_nodes):
-            for b in range(self.n_graph_nodes):
-                if a != b and self.adj[a, b]:
-                    self.forward_power[a, b] = self.rng.uniform(2., 8.)
+        (self.adj, self.base_rates, self.base_background,
+         self.prop, self.forward_power) = make_topology(self.rng, self.cfg)
+        self.rates = fluctuate_rates(self.rng, self.cfg, self.base_rates)
+        self.background = self.base_background.copy()
+        self.congestion_delta = np.zeros_like(self.background)
+        self.flapped_edges = []
 
     def _slot_capacity_mb(self, a, b):
         return self.rates[a, b] * (1 - self.background[a, b]) * self.cfg.slot_seconds / 8
@@ -145,28 +134,17 @@ class EdgeEnv:
 
     def _rebuild_occupancy(self):
         self.slot_resource_used.fill(0)
-        self.slot_local_resource_used.fill(0)
-        self.slot_local_mem_used.fill(0)
-        self.slot_local_storage_used.fill(0)
-        self.slot_local_queues.fill(0)
         self.slot_mem_used.fill(0)
         self.slot_storage_used.fill(0)
         self.slot_queues.fill(0)
         for assignment in self.active_assignments:
             task = self.tasks[assignment.task_index]
             action = assignment.action
-            if action.destination == -1:
-                source = task.source
-                self.slot_local_resource_used[source, action.resource] += action.compute_share
-                self.slot_local_mem_used[source] += task.memory_gb
-                self.slot_local_storage_used[source] += task.storage_gb
-                self.slot_local_queues[source] += 1
-            else:
-                destination = action.destination
-                self.slot_resource_used[destination, action.resource] += action.compute_share
-                self.slot_mem_used[destination] += task.memory_gb
-                self.slot_storage_used[destination] += task.storage_gb
-                self.slot_queues[destination] += 1
+            destination = action.destination
+            self.slot_resource_used[destination, action.resource] += action.compute_share
+            self.slot_mem_used[destination] += task.memory_gb
+            self.slot_storage_used[destination] += task.storage_gb
+            self.slot_queues[destination] += 1
 
     def _advance_to_slot(self, target_slot):
         while self.slot < target_slot:
@@ -180,38 +158,17 @@ class EdgeEnv:
             ]
             self._rebuild_occupancy()
             self.carryover_resource_used = self.slot_resource_used.copy()
-            self.carryover_local_resource_used = self.slot_local_resource_used.copy()
             self.slot_link_used.fill(0)
             self.slot_assignments.clear()
             self.slot_step_count = 0
             if self.slot % self.cfg.topology_period_slots == 0:
                 self._new_topology()
             else:
-                self.background = np.where(
-                    self.rates > 0,
-                    self.rng.uniform(
-                        self.cfg.congestion_min,
-                        self.cfg.congestion_max,
-                        self.background.shape,
-                    ),
-                    0,
-                ).astype(np.float32)
-
-    def _local_support(self, task, resource):
-        return bool(self.support[resource, task.kind] and
-                    (resource == 0 or resource == 1 and task.source % 2 == 0 or
-                     resource == 2 and task.source % 3 == 0))
-
-    def _same_compute_group(self, task, destination, resource):
-        group = []
-        for assignment in self.slot_assignments:
-            other_task = self.tasks[assignment.task_index]
-            action = assignment.action
-            same_local = destination == -1 and action.destination == -1 and other_task.source == task.source
-            same_remote = destination >= 0 and action.destination == destination
-            if action.resource == resource and (same_local or same_remote):
-                group.append(assignment)
-        return group
+                (self.rates, self.background, self.congestion_delta,
+                 self.flapped_edges) = fluctuate_topology(
+                    self.rng, self.cfg, self.adj, self.base_rates, self.base_background,
+                    self.prop, self.forward_power, self.background, self.flapped_edges,
+                )
 
     def _transport_terms(self, task, destination, path, realized_background=None):
         delay = task.output_mb * 8 / self.radio_rates[task.source]
@@ -245,14 +202,10 @@ class EdgeEnv:
         return delay, energy
 
     def _estimated_completion(
-        self, task, resource, share, transport_delay, transport_energy, local,
+        self, task, resource, share, transport_delay, transport_energy,
     ):
         compute_delay = task.compute_gflop / share
         compute_energy = self.resource_power[resource] * compute_delay
-        if local:
-            if compute_delay > task.deadline_s:
-                return None
-            return compute_delay, compute_energy, 0.0, 0.0, 0.0
         remaining_uplink_time = task.deadline_s - transport_delay - compute_delay
         if remaining_uplink_time <= 0.0:
             return None
@@ -279,8 +232,6 @@ class EdgeEnv:
     ):
         compute_delay = task.compute_gflop / (share * (1 - degradation))
         compute_energy = self.resource_power[action.resource] * compute_delay
-        if action.destination == -1:
-            return compute_delay, compute_energy
         uplink_time = task.data_mb * 8 / action.uplink_rate
         radio_energy = (
             action.uplink_power + self.cfg.uplink_circuit_power_w
@@ -291,23 +242,16 @@ class EdgeEnv:
         )
 
     def _group_allocation(self, task, destination, resource, transport_delay, transport_energy):
-        group = self._same_compute_group(task, destination, resource)
+        group = [
+            assignment for assignment in self.slot_assignments
+            if assignment.action.destination == destination and assignment.action.resource == resource
+        ]
         group_tasks = [self.tasks[assignment.task_index] for assignment in group] + [task]
         transport_delays = [assignment.action.transport_delay for assignment in group] + [transport_delay]
-        if destination == -1:
-            capacity = (
-                self.local_speed[resource]
-                - self.carryover_local_resource_used[task.source, resource]
-            )
-        else:
-            capacity = (
-                self.speed[destination, resource]
-                - self.carryover_resource_used[destination, resource]
-            )
+        capacity = self.speed[destination, resource] - self.carryover_resource_used[destination, resource]
         minimum_shares = []
         for item, fixed_delay in zip(group_tasks, transport_delays):
-            if destination >= 0:
-                fixed_delay += item.data_mb * 8 / self.radio_rates[item.source]
+            fixed_delay += item.data_mb * 8 / self.radio_rates[item.source]
             if fixed_delay >= item.deadline_s:
                 return None
             minimum_shares.append(item.compute_gflop / (item.deadline_s - fixed_delay))
@@ -326,40 +270,29 @@ class EdgeEnv:
             other_task = self.tasks[assignment.task_index]
             outcome = self._estimated_completion(
                 other_task, resource, share, action.transport_delay,
-                action.transport_energy, destination == -1,
+                action.transport_energy,
             )
             if outcome is None:
                 return None
             outcomes.append((assignment, float(share), outcome))
         candidate = self._estimated_completion(
-            task, resource, shares[-1], transport_delay, transport_energy, destination == -1,
+            task, resource, shares[-1], transport_delay, transport_energy,
         )
         if candidate is None:
             return None
         return outcomes, float(shares[-1]), candidate
 
     def _candidate(self, task, destination, resource, path):
-        local = destination == -1
-        if local:
-            source = task.source
-            if self.slot_local_mem_used[source] + task.memory_gb > self.local_mem_cap[source]:
-                return None
-            if self.slot_local_storage_used[source] + task.storage_gb > self.local_storage_cap[source]:
-                return None
-            if self.slot_local_queues[source] + 1 > self.local_queue_cap[source]:
-                return None
-            transport_delay, transport_energy = 0.0, 0.0
-        else:
-            if self.slot_mem_used[destination] + task.memory_gb > self.mem_cap[destination]:
-                return None
-            if self.slot_storage_used[destination] + task.storage_gb > self.storage_cap[destination]:
-                return None
-            if self.slot_queues[destination] + 1 > self.queue_cap[destination]:
-                return None
-            transport = self._transport_terms(task, destination, path)
-            if transport is None:
-                return None
-            transport_delay, transport_energy = transport
+        if self.slot_mem_used[destination] + task.memory_gb > self.mem_cap[destination]:
+            return None
+        if self.slot_storage_used[destination] + task.storage_gb > self.storage_cap[destination]:
+            return None
+        if self.slot_queues[destination] + 1 > self.queue_cap[destination]:
+            return None
+        transport = self._transport_terms(task, destination, path)
+        if transport is None:
+            return None
+        transport_delay, transport_energy = transport
         allocation = self._group_allocation(
             task, destination, resource, transport_delay, transport_energy,
         )
@@ -377,22 +310,16 @@ class EdgeEnv:
         realized = {}
         for a, b in zip(action.path, action.path[1:]):
             for source, target in ((a, b), (b, a)):
+                background = self.background[source, target]
+                sigma_eff = self.cfg.congestion_noise * (0.5 + background)
                 realized[source, target] = float(np.clip(
-                    self.background[source, target]
-                    + self.rng.uniform(
-                        -self.cfg.congestion_noise,
-                        self.cfg.congestion_noise,
-                    ),
-                    0.0,
-                    self.cfg.congestion_realized_max,
+                    background + self.execution_rng.uniform(-sigma_eff, sigma_eff),
+                    0.0, self.cfg.congestion_realized_max,
                 ))
-        degradation = float(self.rng.uniform(0.0, self.cfg.compute_degradation_max))
-        if action.destination == -1:
-            transport_delay, transport_energy = 0.0, 0.0
-        else:
-            transport_delay, transport_energy = self._transport_terms(
-                task, action.destination, action.path, realized,
-            )
+        degradation = float(self.execution_rng.uniform(0.0, self.cfg.compute_degradation_max))
+        transport_delay, transport_energy = self._transport_terms(
+            task, action.destination, action.path, realized,
+        )
         return realized, degradation, transport_delay, transport_energy
 
     def _task_reward_parts(self, task, action):
@@ -406,12 +333,6 @@ class EdgeEnv:
     def _make_candidates(self):
         task = self.tasks[self.idx]
         actions = []
-        if not task.must_offload:
-            for q in range(3):
-                if self._local_support(task, q):
-                    action = self._candidate(task, -1, q, ())
-                    if action is not None:
-                        actions.append(action)
         if task.allow_offload:
             source = task.access_edge
             for destination in range(self.cfg.n_edges):
@@ -431,7 +352,7 @@ class EdgeEnv:
                                 actions.append(action)
             # 云端经接入边缘节点的广域链路转发。
             for q in range(3):
-                if self.support[q, task.kind]:
+                if self.adj[source, self.cloud] and self.support[q, task.kind]:
                     action = self._candidate(task, self.cloud, q, (source, self.cloud))
                     if action is not None:
                         actions.append(action)
@@ -452,8 +373,8 @@ class EdgeEnv:
             node[j, 7] = len(neighbors) / n
             node[j, 8] = float(j == self.cloud)
             node[j, 9] = float(self.speed[j].sum() / 10000)
-        edge = np.zeros((n, n, 3), dtype=np.float32)
-        edge[:, :, 0] = self.rates / 2000
+        edge = np.zeros((n, n, 4), dtype=np.float32)
+        edge[:, :, 0] = self.rates / self.cfg.link_rate_max_mbps
         slot_capacity = self.rates * (1 - self.background) * self.cfg.slot_seconds / 8
         edge[:, :, 1] = self.background + np.divide(
             self.slot_link_used,
@@ -462,6 +383,7 @@ class EdgeEnv:
             where=slot_capacity > 0,
         )
         edge[:, :, 2] = self.prop / .003
+        edge[:, :, 3] = self.congestion_delta
         return node, edge
 
     def observe(self):
@@ -472,21 +394,17 @@ class EdgeEnv:
         targets = np.empty(len(self.actions), dtype=np.int64)
         paths = np.zeros((len(self.actions), self.n_graph_nodes), dtype=np.float32)
         for a, action in enumerate(self.actions):
-            local = action.destination == -1
             reject = action.destination == -2
             targets[a] = task.access_edge if action.destination < 0 else action.destination
             route = action.path or (task.access_edge,)
             paths[a, list(route)] = 1 / len(route)
-            cand[a, :3] = [float(reject), float(local), float(action.destination == self.cloud)]
+            cand[a, :3] = [float(reject), 0.0, float(action.destination == self.cloud)]
             cand[a, 3:6] = [float(action.resource == q) for q in range(3)]
             edge_hops = max(0, len(route) - 1) if 0 <= action.destination < self.cloud else 0
             cand[a, 6] = edge_hops / self.cfg.max_hops
             cand[a, 7] = action.delay / self.cfg.reward_delay_ref
             cand[a, 8] = action.energy / 10
-            if local:
-                cand[a, 9] = self.slot_local_queues[task.source] / self.local_queue_cap[task.source]
-            else:
-                cand[a, 9] = self.slot_queues[targets[a]] / self.queue_cap[targets[a]]
+            cand[a, 9] = self.slot_queues[targets[a]] / self.queue_cap[targets[a]]
         task_vector = np.array([
             task.data_mb / 8, task.output_mb, task.compute_gflop / 10,
             task.deadline_s / self.cfg.reward_delay_ref, task.priority / 5,
@@ -606,16 +524,12 @@ class EdgeEnv:
             self.total_energy += action.energy
             if 0 <= action.destination < self.cloud:
                 self.total_hops += max(0, len(action.path) - 1)
-            if action.destination != -1:
-                self.total_path_length += len(action.path)
+            self.total_path_length += len(action.path)
             self._rebuild_occupancy()
-            if action.destination != -1:
-                for a, b in zip(action.path, action.path[1:]):
-                    self.slot_link_used[a, b] += task.data_mb
-                    self.slot_link_used[b, a] += task.output_mb
-            if action.destination == -1:
-                self.local_executions += 1
-            elif action.destination == self.cloud:
+            for a, b in zip(action.path, action.path[1:]):
+                self.slot_link_used[a, b] += task.data_mb
+                self.slot_link_used[b, a] += task.output_mb
+            if action.destination == self.cloud:
                 self.cloud_executions += 1
             else:
                 self.edge_executions += 1
@@ -739,7 +653,7 @@ class EdgeEnv:
             ),
             "forced_reject_rate": self.forced_rejects / count,
             "mean_action_count": self.action_count_sum / count,
-            "local_execution_rate": self.local_executions / count,
+            "local_execution_rate": 0.0,
             "edge_execution_rate": self.edge_executions / count,
             "cloud_execution_rate": self.cloud_executions / count,
             "mean_path_length": mean_path_length,

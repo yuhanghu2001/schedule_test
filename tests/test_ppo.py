@@ -14,7 +14,7 @@ class PPOTrainingTest(unittest.TestCase):
     def test_default_parameters_match_experiment_table(self):
         cfg = load_config("default")
         self.assertEqual(cfg.episode_slots, 20)
-        self.assertEqual(cfg.arrival_rate, 10.0)
+        self.assertEqual(cfg.arrival_rate, 18.0)
         self.assertEqual(cfg.gat_hidden_dim, 256)
         self.assertEqual(cfg.actor_hidden_dim, 128)
         self.assertEqual(cfg.critic_hidden_dim, 128)

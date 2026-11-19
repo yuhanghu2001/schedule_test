@@ -22,7 +22,7 @@ class AdditiveRewardTest(unittest.TestCase):
     def test_conditional_reject_uses_omega_3(self):
         cfg = replace(load_config("small_smoke"), episode_slots=1)
         env = EdgeEnv(cfg)
-        env.tasks = [Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1, False, False)]
+        env.tasks = [Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1)]
         env.idx = 0
         env.observe()
         _, reward, _, info = env.step(len(env.actions) - 1)
@@ -44,7 +44,7 @@ class AdditiveRewardTest(unittest.TestCase):
     def test_invalid_action_uses_omega_2(self):
         cfg = replace(load_config("small_smoke"), episode_slots=1)
         env = EdgeEnv(cfg)
-        env.tasks = [Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1, False, False)]
+        env.tasks = [Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1)]
         env.idx = 0
         env.observe()
         _, reward, done, info = env.step(-1)
@@ -73,14 +73,14 @@ class AdditiveRewardTest(unittest.TestCase):
 
     def test_low_cost_accept_is_better_than_reject(self):
         cfg = replace(load_config("small_smoke"), episode_slots=1)
-        task = Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1, False, False)
+        task = Task(0, 0, 0, .1, .01, .1, .5, .1, .1, 1)
         accept_env = EdgeEnv(cfg)
         accept_env.tasks = [task]
         accept_env.idx = 0
         accept_env.observe()
         accept_action = next(
             index for index, action in enumerate(accept_env.actions)
-            if action.destination == -1 and action.resource == 0
+            if action.destination == 0 and action.resource == 0
         )
         _, accept_reward, _, _ = accept_env.step(accept_action)
 
@@ -116,16 +116,16 @@ class AdditiveRewardTest(unittest.TestCase):
         )
         env = EdgeEnv(cfg)
         env.tasks = [
-            Task(1, 1, 0, 1., .1, 1., .5, .5, .5, 1, False, False),
-            Task(1, 1, 0, 1., .1, 1., .5, .5, .5, 1, False, False),
+            Task(0, 0, 0, 1., .1, 1., .5, .5, .5, 1),
+            Task(0, 0, 0, 1., .1, 1., .5, .5, .5, 1),
         ]
         env.idx = 0
         env.observe()
         action = next(i for i, item in enumerate(env.actions)
-                      if item.destination == -1 and item.resource == 0)
+                      if item.destination == 0 and item.resource == 0)
         env.step(action)
         action = next(i for i, item in enumerate(env.actions)
-                      if item.destination == -1 and item.resource == 0)
+                      if item.destination == 0 and item.resource == 0)
         _, _, _, info = env.step(action)
         rewarded_delay = (
             -info["reward_delay_part"] * cfg.reward_delay_ref / cfg.reward_beta_delay
@@ -158,14 +158,14 @@ class AdditiveRewardTest(unittest.TestCase):
         )
         env = EdgeEnv(cfg)
         env.tasks = [
-            Task(0, 0, 0, .1, .01, 1., .084, .1, .1, 1, False, False),
+            Task(0, 0, 0, .1, .01, 10., .084, .1, .1, 1),
         ]
         env.idx = 0
-        env.rng = np.random.default_rng(0)
+        env.execution_rng = np.random.default_rng(0)
         env.observe()
         action = next(
             index for index, item in enumerate(env.actions)
-            if item.destination == -1 and item.resource == 0
+            if item.destination == 0 and item.resource == 0
         )
         estimated_delay = env.actions[action].delay
         _, _, _, info = env.step(action)

@@ -14,8 +14,8 @@ class Task:
     memory_gb: float
     storage_gb: float
     priority: int
-    allow_offload: bool
-    must_offload: bool
+    allow_offload: bool = True
+    must_offload: bool = True
     slot: int = 0
 
 
@@ -34,7 +34,6 @@ def sample_tasks(
     min_edge_compute_gflops: float,
     deadline_slack_min: float,
     deadline_slack_max: float,
-    must_offload_rate: float,
 ) -> list[Task]:
     tasks = []
     hotspot_count = int(np.ceil(hotspot_fraction * terminals))
@@ -56,9 +55,6 @@ def sample_tasks(
             deadline_s = (min_uplink + min_download + min_compute) * rng.uniform(
                 deadline_slack_min, deadline_slack_max,
             )
-            offload_draw = rng.random()
-            must_offload = bool(offload_draw < must_offload_rate)
-            allow_offload = bool(offload_draw < 0.93) or must_offload
             tasks.append(Task(
                 source=source,
                 access_edge=source % edges,
@@ -70,8 +66,6 @@ def sample_tasks(
                 memory_gb=float(rng.uniform(0.2, 2.0)),
                 storage_gb=float(rng.uniform(0.1, 2.0)),
                 priority=int(rng.integers(1, 6)),
-                allow_offload=allow_offload,
-                must_offload=must_offload,
                 slot=slot,
             ))
     return tasks

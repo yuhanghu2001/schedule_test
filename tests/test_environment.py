@@ -9,6 +9,38 @@ from src.tasks import Task
 
 
 class EnvironmentDynamicsTest(unittest.TestCase):
+    def test_sparse_edge_profiles_and_custom_node_counts(self):
+        services = ((0, 1), (2, 3), (3, 4), (0,), (0, 1), (2, 4),
+                    (1, 3), (2,), (0, 2), (3,), (1, 4), (4,))
+        speeds = ((150, 520, 150), (150, 150, 520), (420, 180, 180), (120, 120, 120))
+        for count in (3, 12, 15):
+            cfg = replace(load_config("small_smoke"), n_edges=count)
+            env = EdgeEnv(cfg)
+            self.assertEqual(env.service_deployment.shape, (count, 5))
+            self.assertEqual(env.speed.shape, (count + 1, 3))
+            for edge in range(count):
+                self.assertEqual(tuple(np.flatnonzero(env.service_deployment[edge])),
+                                 services[edge % 12])
+                np.testing.assert_array_equal(env.speed[edge], speeds[edge % 4])
+            np.testing.assert_array_equal(env.speed[env.cloud], cfg.cloud_speed)
+
+    def test_realized_congestion_uses_each_directed_arcs_current_load(self):
+        env = EdgeEnv(load_config("small_smoke"))
+        task = Task(0, 0, 0, .1, .01, .1, 1., .1, .1, 1)
+        env.tasks = [task]
+        env.observe()
+        cloud_action = next(a for a in env.actions if a.destination == env.cloud)
+        env.background[0, env.cloud] = .2
+        env.background[env.cloud, 0] = .8
+        env.execution_rng = np.random.default_rng(7)
+        noise = np.random.default_rng(7).uniform(-1, 1, 2)
+        realized, _, _, _ = env._sample_uncertainty(task, cloud_action)
+        for arc, draw in zip(((0, env.cloud), (env.cloud, 0)), noise):
+            rho = env.background[arc]
+            expected = np.clip(rho + draw * env.cfg.congestion_noise * (.5 + rho),
+                               0, env.cfg.congestion_realized_max)
+            self.assertAlmostEqual(realized[arc], expected)
+
     def test_service_deployment_forces_remote_edge_candidates(self):
         cfg = replace(load_config("small_smoke"), episode_slots=1)
         env = EdgeEnv(cfg)
@@ -39,14 +71,14 @@ class EnvironmentDynamicsTest(unittest.TestCase):
         )
         env = EdgeEnv(cfg)
         env.tasks = [
-            Task(1, 1, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1, False, False),
-            Task(1, 1, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1, False, False),
+            Task(0, 0, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1),
+            Task(0, 0, 0, 1.0, 0.1, 1.0, 0.5, 0.5, 0.5, 1),
         ]
         env.idx = 0
         env.observe()
         first_action = next(
             index for index, action in enumerate(env.actions)
-            if action.destination == -1 and action.resource == 0
+            if action.destination == 0 and action.resource == 0
         )
         _, first_reward, _, _ = env.step(first_action)
         previous_share = env.slot_assignments[0].action.compute_share
@@ -54,14 +86,14 @@ class EnvironmentDynamicsTest(unittest.TestCase):
 
         second_action = next(
             index for index, action in enumerate(env.actions)
-            if action.destination == -1 and action.resource == 0
+            if action.destination == 0 and action.resource == 0
         )
         _, second_reward, _, _ = env.step(second_action)
 
         first = env.slot_assignments[0].action
         self.assertLess(first.compute_share, previous_share)
         self.assertGreater(first.delay, previous_delay)
-        self.assertAlmostEqual(env.slot_local_resource_used[1, 0], env.local_speed[0])
+        self.assertAlmostEqual(env.slot_resource_used[0, 0], env.speed[0, 0])
         self.assertAlmostEqual(
             env.sum_delay,
             sum(assignment.action.delay for assignment in env.slot_assignments),
@@ -89,16 +121,17 @@ class EnvironmentDynamicsTest(unittest.TestCase):
             for action in env.actions[:-1]:
                 self.assertLessEqual(action.delay, task.deadline_s + 1e-12)
                 self.assertTrue(env.support[action.resource, task.kind])
-                if action.destination == -1:
-                    self.assertEqual(action.path, ())
-                else:
-                    self.assertLessEqual(action.uplink_power, env.cfg.uplink_max_power_w)
-                    if action.destination < env.cloud:
-                        self.assertTrue(
-                            env.service_deployment[action.destination, task.kind]
-                        )
-                    for source, target in zip(action.path, action.path[1:]):
-                        self.assertTrue(env.adj[source, target])
+                self.assertGreaterEqual(action.destination, 0)
+                self.assertLessEqual(action.destination, env.cloud)
+                self.assertLessEqual(action.uplink_power, env.cfg.uplink_max_power_w)
+                if action.destination < env.cloud:
+                    self.assertTrue(env.service_deployment[action.destination, task.kind])
+                    self.assertLessEqual(len(action.path) - 1, env.cfg.max_hops)
+                    self.assertEqual(len(set(action.path)), len(action.path))
+                self.assertEqual(action.path[0], task.access_edge)
+                self.assertEqual(action.path[-1], action.destination)
+                for source, target in zip(action.path, action.path[1:]):
+                    self.assertTrue(env.adj[source, target])
             action_id = max(
                 range(len(env.actions)),
                 key=lambda index: (env.actions[index].destination != -2,
@@ -106,9 +139,7 @@ class EnvironmentDynamicsTest(unittest.TestCase):
             )
             _, _, done, _ = env.step(action_id)
             self.assertTrue(np.all(env.slot_resource_used <= env.speed + 1e-5))
-            self.assertTrue(np.all(env.slot_local_resource_used <= env.local_speed + 1e-5))
             self.assertTrue(np.all(env.slot_mem_used <= env.mem_cap + 1e-5))
-            self.assertTrue(np.all(env.slot_local_mem_used <= env.local_mem_cap + 1e-5))
             for source in range(env.n_graph_nodes):
                 for target in range(env.n_graph_nodes):
                     if source != target and env.adj[source, target]:
@@ -144,25 +175,25 @@ class EnvironmentDynamicsTest(unittest.TestCase):
         )
         env = EdgeEnv(cfg)
         env.tasks = [
-            Task(0, 0, 2, .1, .01, 10., 3., .5, .5, 1, False, False, 0),
-            Task(0, 0, 0, .1, .01, .1, 1., 100., .1, 1, False, False, 1),
-            Task(0, 0, 0, .1, .01, .1, 1., 100., .1, 1, False, False, 2),
+            Task(3, 3, 0, .1, .01, 150., 3., .5, .5, 1, slot=0),
+            Task(0, 0, 0, .1, .01, .1, 1., 150., .1, 1, slot=1),
+            Task(0, 0, 0, .1, .01, .1, 1., 150., .1, 1, slot=2),
         ]
         env.idx = 0
         env.observe()
         action = next(
             index for index, item in enumerate(env.actions)
-            if item.destination == -1 and item.resource == 2
+            if item.destination == 3 and item.resource == 0
         )
         env.step(action)
         self.assertEqual(env.slot, 1)
-        self.assertAlmostEqual(env.carryover_local_resource_used[0, 2], 6.0)
-        self.assertAlmostEqual(env.slot_local_mem_used[0], .5)
+        self.assertAlmostEqual(env.carryover_resource_used[3, 0], 120.0)
+        self.assertAlmostEqual(env.slot_mem_used[3], .5)
 
         env.step(len(env.actions) - 1)
         self.assertEqual(env.slot, 2)
-        self.assertAlmostEqual(env.carryover_local_resource_used[0, 2], 0.0)
-        self.assertAlmostEqual(env.slot_local_mem_used[0], 0.0)
+        self.assertAlmostEqual(env.carryover_resource_used[3, 0], 0.0)
+        self.assertAlmostEqual(env.slot_mem_used[3], 0.0)
 
 
 if __name__ == "__main__":

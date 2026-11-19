@@ -4,7 +4,7 @@ from torch import nn
 
 
 class GraphAttentionLayer(nn.Module):
-    def __init__(self, in_dim, out_dim, edge_dim=3):
+    def __init__(self, in_dim, out_dim, edge_dim=4):
         super().__init__()
         self.transform = nn.Linear(in_dim, out_dim, bias=False)
         self.attention = nn.Linear(2 * out_dim + edge_dim, 1, bias=False)
@@ -23,10 +23,10 @@ class GraphAttentionLayer(nn.Module):
 
 
 class GATEncoder(nn.Module):
-    def __init__(self, node_dim=10, hidden=256):
+    def __init__(self, node_dim=10, hidden=256, edge_dim=4):
         super().__init__()
-        self.layer1 = GraphAttentionLayer(node_dim, hidden)
-        self.layer2 = GraphAttentionLayer(hidden, hidden)
+        self.layer1 = GraphAttentionLayer(node_dim, hidden, edge_dim)
+        self.layer2 = GraphAttentionLayer(hidden, hidden, edge_dim)
 
     def forward(self, nodes, adjacency, edges):
         return self.layer2(self.layer1(nodes, adjacency, edges), adjacency, edges)
