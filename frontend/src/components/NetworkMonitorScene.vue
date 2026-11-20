@@ -1,5 +1,6 @@
 <script setup>
 import { computed, useId } from 'vue'
+import { linkKey, linkName, referenceDelay } from '../utils/linkTelemetry'
 import NodeGlyph from './NodeGlyph.vue'
 const props = defineProps({
   snapshot: Object,
@@ -77,14 +78,16 @@ function currentPath(a, b) {
 }
 const nodeName = (n) =>
   n.kind === 'cloud' ? 'C0' : (n.kind === 'terminal' ? 'U' : 'E') + n.id
-const resourceName = (n) => (n.profile === 'balanced' ? '中继' : n.profile)
-function linkColor(l) {
-  return l.status === 'flapped' ||
-    Math.max(l.background_fwd, l.background_rev) > 0.7
-    ? '#ff687d'
-    : l.kind === 'cloud'
-      ? '#009bff'
-      : '#ffb52e'
+const resources = ['CPU', 'NPU', 'FPGA']
+function dominant(speed, i) {
+  return speed[i] === Math.max(...speed) && speed[i] > Math.min(...speed)
+}
+function linkTone(link) {
+  if (link.status !== 'active') return 'offline'
+  const congestion = Math.max(link.background_fwd, link.background_rev)
+  if (congestion >= 0.7) return 'red'
+  if (congestion >= 0.4) return 'orange'
+  return 'blue'
 }
 </script>
 <template>
@@ -125,7 +128,7 @@ function linkColor(l) {
         />
       </clipPath>
       <marker
-        v-for="color in ['blue', 'orange', 'cyan', 'green']"
+        v-for="color in ['blue', 'orange', 'cyan', 'green', 'red']"
         :key="color"
         :id="id + '-' + color"
         viewBox="0 0 10 10"
@@ -140,7 +143,8 @@ function linkColor(l) {
           :fill="
             {
               blue: '#00a6ff',
-              orange: '#ffb52e',
+              orange: '#ffbc59',
+              red: '#ff687d',
               cyan: '#00d9ff',
               green: '#66ff83',
             }[color]
@@ -208,36 +212,29 @@ function linkColor(l) {
       />
     </g>
     <template v-if="snapshot">
+      <text v-if="!compact" x="36" y="38" class="capacity-unit">算力 GFLOP/s · 优势资源高亮</text>
       <g class="monitor-physical-links">
         <path
-          v-for="(link, i) in snapshot.links"
-          :key="i"
+          v-for="link in snapshot.links"
+          :key="linkKey(link)"
           :d="physicalPath(link)"
-          :stroke="linkColor(link)"
           :class="[
             'monitor-network-link',
-            link.kind,
+            link.kind, linkTone(link),
             { flapped: link.status === 'flapped' },
           ]"
+          :style="link.status === 'active' ? { strokeWidth: 1.7 + 2 * Math.max(link.background_fwd, link.background_rev) } : null"
           :data-source="link.source"
           :data-target="link.target"
-          :marker-start="
-            link.status === 'active'
-              ? `url(#${id}-${link.kind === 'cloud' ? 'blue' : 'orange'})`
-              : null
-          "
-          :marker-end="
-            link.status === 'active'
-              ? `url(#${id}-${link.kind === 'cloud' ? 'blue' : 'orange'})`
-              : null
-          "
+          :marker-start="link.status === 'active' ? `url(#${id}-${linkTone(link)})` : null"
+          :marker-end="link.status === 'active' ? `url(#${id}-${linkTone(link)})` : null"
         >
           <title>
-            {{ link.source }} ↔ {{ link.target }} ·
+            {{ linkName(link) }} ·
             {{ link.rate_mbps.toFixed(1) }} Mbps · 双向背景拥塞
             {{ (100 * link.background_fwd).toFixed(1) }}% /
             {{ (100 * link.background_rev).toFixed(1) }}% ·
-            {{ link.status === 'active' ? '连通' : '失效' }}
+            {{ link.status === 'active' ? '1 MB 正向 / 反向估算时延 ' + referenceDelay(link, 'fwd').toFixed(1) + ' / ' + referenceDelay(link, 'rev').toFixed(1) + ' ms' : '失效' }}
           </title>
         </path>
       </g>
@@ -256,10 +253,11 @@ function linkColor(l) {
           </title>
         </path>
       </g>
-      <g class="monitor-current-path">
+      <g class="monitor-current-path" :key="snapshot.task_index">
         <path
           v-for="(pair, i) in route"
           :key="i"
+          pathLength="100"
           :d="currentPath(...pair)"
           :marker-end="`url(#${id}-green)`"
         />
@@ -331,9 +329,7 @@ function linkColor(l) {
             :href="`#${id}-server`"
             :transform="`translate(${n.x} ${n.y + 12}) scale(.9)`"
           />
-          <text :x="n.x" :y="n.y + 70" class="monitor-resource-profile">
-            {{ resourceName(n) }}
-          </text>
+
         </template>
         <template v-else>
           <ellipse
@@ -350,6 +346,10 @@ function linkColor(l) {
             U{{ n.id }}
           </text>
         </template>
+        <text v-if="n.speed" :x="n.x" :y="n.y + (n.kind === 'cloud' ? 48 : 70)" class="monitor-resource-profile">
+          <tspan v-for="(name, i) in resources" :key="name" :dx="i ? 8 : 0"
+            :class="{ dominant: dominant(n.speed, i) }">{{ name }} {{ n.speed[i] }}</tspan>
+        </text>
         <title>
           {{ n.label
           }}{{

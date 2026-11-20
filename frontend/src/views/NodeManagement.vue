@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, toRaw } from 'vue'
+import { ref, computed, watch, onMounted, toRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAppStore } from '../stores/app'
 import api from '../api/client'
@@ -11,11 +11,9 @@ const nodes = ref([]),
   selected = ref(null),
   type = ref('all'),
   search = ref(''),
-  page = ref(1),
-  pageSize = ref(10),
+  table = ref(null),
   saving = ref(false),
-  loading = ref(false),
-  dirty = ref(false)
+  loading = ref(false)
 const resources = ['CPU', 'NPU', 'FPGA'],
   services = ['图像识别', '目标检测', '视频分析', '语音处理', '信号计算']
 const types = [
@@ -39,12 +37,7 @@ const filtered = computed(() =>
         .includes(search.value.toLowerCase()),
   ),
 )
-const rows = computed(() =>
-  filtered.value.slice(
-    (page.value - 1) * pageSize.value,
-    page.value * pageSize.value,
-  ),
-)
+watch([type, search], () => table.value.setScrollTop(0))
 const neighbors = computed(() => {
   if (!selected.value || !snapshot.value) return []
   const n = selected.value
@@ -87,14 +80,9 @@ async function load() {
       ...snapshot.value.terminals.map((n) => ({ ...n, kind: 'terminal' })),
     ]
     selected.value = nodes.value.find((n) => n.kind === 'edge')
-    dirty.value = false
   } finally {
     loading.value = false
   }
-}
-function filter(value) {
-  type.value = value
-  page.value = 1
 }
 function edit(node) {
   selected.value = node
@@ -123,7 +111,6 @@ async function save() {
     }
     snapshot.value = await api.post('/env/preview', environment)
     app.env = environment
-    dirty.value = false
     ElMessage.success('配置已保存，将用于新建推演和训练环境')
   } finally {
     saving.value = false
@@ -138,18 +125,14 @@ onMounted(load)
     element-loading-background="#06152f"
   >
     <section class="monitor-panel node-config-list">
-      <h2 class="monitor-title">
-        节点列表与属性配置<small>{{
-          dirty ? '有未保存的更改' : '当前环境配置'
-        }}</small>
-      </h2>
+      <h2 class="monitor-title">节点列表与属性配置</h2>
       <div class="node-config-toolbar">
         <div class="node-type-tabs">
           <button
             v-for="t in types"
             :key="t[0]"
             :class="{ active: type === t[0] }"
-            @click="filter(t[0])"
+            @click="type = t[0]"
           >
             {{ t[1] }}（{{
               nodes.filter((n) => t[0] === 'all' || n.kind === t[0]).length
@@ -160,7 +143,6 @@ onMounted(load)
           v-model="search"
           placeholder="搜索节点 ID、类型或资源"
           clearable
-          @input="page = 1"
         /><el-button :disabled="saving || loading" @click="load"
           >恢复已保存配置</el-button
         ><el-button
@@ -173,8 +155,10 @@ onMounted(load)
       </div>
       <div class="node-config-table">
         <el-table
-          :data="rows"
+          ref="table"
+          :data="filtered"
           height="100%"
+          scrollbar-always-on
           border
           highlight-current-row
           @row-click="edit"
@@ -228,20 +212,6 @@ onMounted(load)
           ></el-table
         >
       </div>
-      <div class="node-config-footer">
-        <span>共 {{ filtered.length }} 项 · 算力单位 GFLOP/s</span
-        ><el-pagination
-          v-model:current-page="page"
-          v-model:page-size="pageSize"
-          :total="filtered.length"
-          :page-sizes="[10, 20, 50]"
-          layout="sizes, prev, pager, next"
-          @size-change="page = 1"
-        />
-      </div>
-      <p class="node-config-note">
-        保存到本机环境草稿，新建推演与训练时生效。端侧仅产生任务和无线收发；远端固定为一个云节点。
-      </p>
     </section>
     <aside class="node-config-detail">
       <section class="monitor-panel">
@@ -290,7 +260,6 @@ onMounted(load)
           v-if="selected"
           label-position="top"
           class="node-edit-form"
-          @change="dirty = true"
         >
           <template v-if="selected.speed"
             ><label v-for="(r, i) in resources" :key="r" class="node-edit-field"
@@ -300,8 +269,7 @@ onMounted(load)
                 v-model="selected.speed[i]"
                 :min="1"
                 :controls="false"
-                :aria-label="r + ' 算力'"
-                @change="dirty = true" /></label
+                :aria-label="r + ' 算力'" /></label
             ><label
               v-for="f in [
                 ['mem_cap', '内存', 'GB'],
@@ -318,14 +286,12 @@ onMounted(load)
                 :precision="f[0] === 'queue_cap' ? 0 : 2"
                 :controls="false"
                 :aria-label="f[1]"
-                @change="dirty = true"
             /></label>
             <div class="node-services">
               <h4>部署服务</h4>
               <el-checkbox-group
                 v-model="selected.services"
                 :disabled="selected.kind === 'cloud'"
-                @change="dirty = true"
                 ><el-checkbox
                   v-for="(s, i) in services"
                   :key="i"
@@ -341,7 +307,6 @@ onMounted(load)
                 :min="1"
                 :controls="false"
                 aria-label="无线参考速率"
-                @change="dirty = true"
             /></label>
             <p class="node-config-note">
               接入 E{{

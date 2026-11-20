@@ -355,17 +355,6 @@ a {
 .resource-2 {
   background: #ffbd63;
 }
-.trend-heading {
-  border-top: 1px solid #19577e;
-  padding-top: 12px;
-  font-size: 14px;
-}
-.trend-heading small {
-  display: block;
-  color: #9bbbdc;
-  font-size: 10px;
-  margin: 5px 0;
-}
 .resource-trend {
   flex: 1;
   min-height: 130px;
@@ -598,6 +587,7 @@ a {
   gap: 15px;
   flex: 1;
   min-height: 0;
+  overflow: auto;
 }
 .strategy-name {
   display: flex;
@@ -613,6 +603,11 @@ a {
   margin-left: auto;
   white-space: nowrap;
   font-size: 11px;
+}
+.strategy-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
 }
 .strategy-param {
   display: flex;
@@ -653,22 +648,46 @@ a {
   color: #34e9e6;
   font-size: 18px;
 }
-.strategy-note {
-  font-size: 11px;
-  color: #acc6e0;
-  line-height: 1.7;
+.strategy-explanation,
+.strategy-rules p {
+  margin: 0;
+  color: #b8d3eb;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.strategy-rules {
+  display: grid;
+  gap: 6px;
+}
+.strategy-rules article {
+  padding: 7px 9px;
+  border: 1px solid #164468;
+  border-radius: 5px;
+}
+.strategy-rules article.selected {
+  background: #0a3354;
+  border-color: #1f90b4;
+}
+.strategy-rules h3 {
+  margin: 0 0 3px;
+  font-size: 14px;
+}
+.strategy-rules .selected h3 {
+  color: #67e4f8;
+}
+@media (max-width: 1700px) {
+  .strategy-rules article {
+    padding: 5px 8px;
+  }
+  .strategy-explanation,
+  .strategy-rules p {
+    line-height: 1.45;
+  }
 }
 .training-link {
   font-size: 12px;
   margin-top: auto;
   text-decoration: none;
-}
-.checkpoint-source {
-  font-size: 10px;
-  color: #a6c4df;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .terminal-details {
   line-height: 2;
@@ -948,9 +967,6 @@ a {
   .util-body {
     padding: 15px 12px 5px;
   }
-  .trend-heading {
-    font-size: 12px;
-  }
   .strategy-body {
     padding: 12px;
     gap: 12px;
@@ -1170,9 +1186,6 @@ a {
 .strategy-flow > div {
   padding: 10px 3px;
 }
-.strategy-note {
-  line-height: 1.5;
-}
 .training-link {
   margin-top: 0;
 }
@@ -1209,9 +1222,6 @@ a {
   .strategy-param b {
     font-size: 16px;
   }
-  .strategy-note {
-    font-size: 10px;
-  }
   .workflow-heading {
     padding-top: 8px;
   }
@@ -1220,9 +1230,6 @@ a {
   min-height: 0;
 }
 .total-resource {
-  flex-shrink: 0;
-}
-.trend-heading {
   flex-shrink: 0;
 }
 @media (max-width: 1700px) {
@@ -1342,7 +1349,7 @@ a {
 .node-config-table {
   flex: 1;
   min-height: 0;
-  padding: 0 14px;
+  padding: 0 14px 14px;
 }
 .node-config-table .el-table {
   font-size: 14px;
@@ -1359,13 +1366,6 @@ a {
 }
 .node-config-table .el-table__row.current-row {
   background: #055163;
-}
-.node-config-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 15px;
-  padding: 20px 16px;
 }
 .node-config-note {
   font-size: 12px;
@@ -1545,10 +1545,6 @@ a {
   .node-edit-field .el-input-number {
     width: 128px;
   }
-  .node-config-footer {
-    padding: 14px 12px;
-    font-size: 12px;
-  }
 }
 @media (max-width: 1250px) {
   .title-frame h1 {
@@ -1586,9 +1582,6 @@ a {
     align-items: stretch;
   }
   .node-type-tabs {
-    flex-wrap: wrap;
-  }
-  .node-config-footer {
     flex-wrap: wrap;
   }
   .title-frame {
@@ -2091,4 +2084,28 @@ a {
     flex: auto;
     max-height: 540px;
   }
+}
+
+.network-monitor-scene .capacity-unit { fill: #b2cde1; font-size: 20px; }
+.network-monitor-scene .monitor-resource-profile {
+  fill: #c8dbee;
+  font-size: 18px;
+  paint-order: stroke;
+  stroke: #041930;
+  stroke-width: 3px;
+}
+.network-monitor-scene--compact .monitor-resource-profile { font-size: 21px; }
+.monitor-resource-profile .dominant { fill: #ffcc67; }
+.monitor-network-link.blue { stroke: #00a6ff; }
+.monitor-network-link.orange { stroke: #ffbc59; }
+.monitor-network-link.red { stroke: #ff687d; }
+.monitor-network-link.offline { stroke: #8092a9; }
+.monitor-current-path { pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .monitor-network-link { transition: stroke .35s, stroke-width .35s; }
+  .monitor-current-path path { animation: reveal-task-route .65s ease-out; }
+}
+@keyframes reveal-task-route {
+  from { stroke-dasharray: 0 100; }
+  to { stroke-dasharray: 100 0; }
 }

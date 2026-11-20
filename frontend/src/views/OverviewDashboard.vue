@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, toRaw, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import api from '../api/client'
@@ -15,23 +15,28 @@ const snapshot = ref(null),
   selected = ref(null),
   drawer = ref(false),
   busy = ref(false),
-  playing = ref(false)
-const policy = ref('shortest_fastest'),
-  activePolicy = ref(null),
-  checkpoint = ref(null),
-  activeCheckpoint = ref(null),
-  preset = ref('draft'),
-  config = ref(null),
+  playing = ref(false),
+  paused = ref(false)
+const policy = ref(''),
   samples = ref([])
-let playback = 0
+let disposed = false
 const resources = ['CPU', 'NPU', 'FPGA'],
   taskNames = ['图像识别', '目标检测', '视频分析', '语音处理', '信号计算']
-const policyNames = {
-  shortest_fastest: '最短最快启发式',
-  greedy_estimate: '贪心估计启发式',
-  random: '随机策略',
-  checkpoint: 'Checkpoint 模型',
+const policies = {
+  shortest_fastest: {
+    name: '最短最快启发式算法',
+    rule: '优先选跳数最少的方案。跳数相同则选分配算力最大的，再依次比较估算时延和能耗，取更低者。',
+  },
+  greedy_estimate: {
+    name: '贪心估计启发式算法',
+    rule: '将估算时延和能耗分别归一化后加权求和，选择总代价最低的可行方案。',
+  },
+  random: {
+    name: '随机算法',
+    rule: '在可行方案和拒绝动作之间等概率抽样，因此有可行方案时也可能拒绝。',
+  },
 }
+const strategySteps = ['任务到达', '筛选候选', '选择动作', '执行反馈']
 const used = computed(() =>
   resources.map((_, i) =>
     snapshot.value
@@ -53,13 +58,17 @@ const completed = computed(
       (t) => t.accepted && t.completed,
     ).length,
 )
-const environment = () =>
-  preset.value === 'draft' ? app.env : { preset_name: preset.value, config: {} }
-const strategy = computed(() =>
-  activePolicy.value === 'checkpoint'
-    ? `Checkpoint · ${app.checkpoints.find((c) => c.path === activeCheckpoint.value)?.name || ''}`
-    : policyNames[activePolicy.value || policy.value],
+const maxHops = computed(() =>
+  app.env?.config.max_hops ?? app.presets[app.env?.preset_name]?.max_hops,
 )
+const strategy = computed(() => policies[policy.value]?.name || '请选择调度算法')
+const strategyStatus = computed(() => {
+  if (!session.value) return '未加载'
+  if (snapshot.value.done) return '推演完成'
+  if (paused.value) return '已暂停'
+  if (playing.value) return '运行中'
+  return snapshot.value.task_index ? '推演已中断' : '任务已加载'
+})
 const fmt = (v, n = 2) => (v == null ? '—' : Number(v).toFixed(n))
 function receive(data, reset = false) {
   snapshot.value = data
@@ -73,89 +82,54 @@ function receive(data, reset = false) {
     selected.value = data.nodes.find((n) => n.id === selected.value.id)
 }
 async function preview() {
-  pause()
   busy.value = true
   try {
-    if (session.value) {
-      await api.delete(`/sim/sessions/${session.value}`)
-      session.value = null
-      activePolicy.value = null
-    }
+    await releaseSession()
     if (!Object.keys(app.presets).length) await app.loadPresets()
-    config.value = structuredClone(
-      toRaw({
-        ...toRaw(app.presets[environment().preset_name]),
-        ...toRaw(environment().config),
-      }),
-    )
-    receive(await api.post('/env/preview', environment()), true)
+    receive(await api.post('/env/preview', app.env), true)
   } finally {
     busy.value = false
   }
 }
-async function create() {
-  pause()
+function releaseSession() {
+  const id = session.value
+  session.value = null
+  paused.value = false
+  if (id) return api.delete(`/sim/sessions/${id}`)
+}
+function changePolicy() {
+  if (session.value) return preview()
+}
+async function loadTasks() {
   busy.value = true
   try {
-    if (session.value) await api.delete(`/sim/sessions/${session.value}`)
-    session.value = null
+    await releaseSession()
     const data = await api.post('/sim/sessions', {
-      ...environment(),
+      ...app.env,
       policy: policy.value,
-      checkpoint_path: checkpoint.value,
     })
-    config.value = structuredClone(
-      toRaw({
-        ...toRaw(app.presets[environment().preset_name]),
-        ...toRaw(environment().config),
-      }),
-    )
+    if (disposed) {
+      await api.delete(`/sim/sessions/${data.session_id}`)
+      return
+    }
     session.value = data.session_id
-    activePolicy.value = policy.value
-    activeCheckpoint.value = checkpoint.value
     receive(data.snapshot, true)
   } finally {
     busy.value = false
   }
 }
-async function step(slot = false) {
-  busy.value = true
-  try {
-    receive(
-      await api.post(
-        `/sim/sessions/${session.value}/${slot ? 'step-slot' : 'step'}`,
-        {},
-      ),
-    )
-    if (snapshot.value.done) pause()
-  } finally {
-    busy.value = false
-  }
-}
-function pause() {
-  playing.value = false
-  playback++
-}
 async function play() {
-  const generation = ++playback
+  paused.value = false
   playing.value = true
   try {
-    while (playing.value && generation === playback) {
-      await step()
-      if (playing.value)
+    while (!disposed && !paused.value && !snapshot.value.done) {
+      receive(await api.post(`/sim/sessions/${session.value}/step`, {}))
+      if (!paused.value && !snapshot.value.done)
         await new Promise((resolve) => setTimeout(resolve, 800))
     }
   } finally {
-    if (generation === playback) playing.value = false
-  }
-}
-async function reset() {
-  pause()
-  busy.value = true
-  try {
-    receive(await api.post(`/sim/sessions/${session.value}/reset`), true)
-  } finally {
-    busy.value = false
+    if (snapshot.value.done) paused.value = false
+    playing.value = false
   }
 }
 function inspect(node) {
@@ -164,8 +138,8 @@ function inspect(node) {
 }
 onMounted(preview)
 onBeforeUnmount(() => {
-  pause()
-  if (session.value) api.delete(`/sim/sessions/${session.value}`)
+  disposed = true
+  releaseSession()
 })
 </script>
 <template>
@@ -186,9 +160,9 @@ onBeforeUnmount(() => {
             <div
               v-for="(k, i) in [
                 ['任务完成率', 'task_success_rate', '%', 100],
-                ['平均完成时延', 'avg_delay_s', 's', 1],
-                ['平均任务能耗', 'avg_energy_j', 'J', 1],
-                ['负载方差', 'mean_load_variance', '', 1],
+                ['任务平均完成时间', 'avg_delay_s', 's', 1],
+                ['任务平均能耗', 'avg_energy_j', 'J', 1],
+                ['负载均衡度', 'load_balance_degree', '', 1],
               ]"
               :key="k[1]"
               class="dashboard-kpi"
@@ -209,109 +183,84 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
-      <section class="monitor-panel utilization">
-        <h2 class="monitor-title">资源利用率</h2>
-        <div class="util-body">
-          <div
-            v-for="(name, i) in resources"
-            :key="name"
-            class="total-resource"
-          >
-            <b :class="'resource-name-' + i">{{ name }}</b>
-            <div class="meter">
-              <i :class="'resource-' + i" :style="{ width: used[i] + '%' }"></i>
+      <section class="monitor-panel strategy-panel">
+        <h2 class="monitor-title">调度策略</h2>
+        <div class="strategy-body">
+          <div class="strategy-name">
+            <b>{{ strategy }}</b>
+            <small :class="playing && !paused ? 'good' : 'muted'">{{ strategyStatus }}</small>
+          </div>
+          <div class="strategy-params">
+            <div class="strategy-param">
+              边缘段最大跳数 <b>{{ maxHops ?? '—' }}</b>
             </div>
-            <span>{{ fmt(used[i], 1) }}%</span>
+            <div class="strategy-param">
+              拓扑重建 <b>{{
+                snapshot?.topology_period_slots
+                  ? '每 ' + snapshot.topology_period_slots + ' 时隙'
+                  : '—'
+              }}</b>
+            </div>
           </div>
-          <div class="trend-heading">
-            资源利用率趋势 <small>最近 40 次快照 · 全部计算节点</small>
+          <div class="workflow-heading">共同调度流程</div>
+          <div class="strategy-flow">
+            <template v-for="(step, i) in strategySteps" :key="step">
+              <span v-if="i" class="flow-arrow" aria-hidden="true">→</span>
+              <div><b>{{ step }}</b></div>
+            </template>
           </div>
-          <ResourceTrend :samples="samples" />
+          <p class="strategy-explanation">
+            按服务、资源容量、链路和时限筛选执行节点、计算资源与路径的组合。执行后更新资源和任务状态。无可行方案则拒绝。
+          </p>
+          <div class="strategy-rules">
+            <article
+              v-for="(algorithm, key) in policies"
+              :key="key"
+              :class="{ selected: policy === key }"
+            >
+              <h3>{{ algorithm.name }}</h3>
+              <p>{{ algorithm.rule }}</p>
+            </article>
+          </div>
         </div>
       </section>
     </div>
     <div class="dashboard-center">
       <section class="monitor-panel network-panel">
-        <h2 class="monitor-title">
-          动态云边端网络拓扑
-          <small :class="playing ? 'good' : ''">{{
-            playing
-              ? '仿真运行中'
-              : session
-                ? snapshot?.done
-                  ? '本轮已结束'
-                  : '推演已暂停'
-                : '初始预览'
-          }}</small>
-        </h2>
+        <h2 class="monitor-title">动态云边端网络拓扑</h2>
         <div class="overview-controls">
           <el-select
-            v-model="preset"
-            aria-label="仿真场景"
-            size="small"
-            :disabled="playing || busy"
-            style="width: 104px"
-            @change="preview"
-            ><el-option label="节点管理配置" value="draft" /><el-option
-              v-for="p in ['default', 'high_congestion', 'small_smoke']"
-              :key="p"
-              :label="p"
-              :value="p" /></el-select
-          ><el-select
             v-model="policy"
-            aria-label="调度策略"
+            aria-label="调度算法"
+            placeholder="请选择调度算法"
             size="small"
             :disabled="playing || busy"
-            style="width: 126px"
-            ><el-option
-              v-for="(name, key) in policyNames"
+            style="width: 172px"
+            @change="changePolicy"
+          >
+            <el-option
+              v-for="(algorithm, key) in policies"
               :key="key"
-              :label="name"
-              :value="key" /></el-select
-          ><el-select
-            v-if="policy === 'checkpoint'"
-            v-model="checkpoint"
-            aria-label="模型权重"
+              :label="algorithm.name"
+              :value="key"
+            />
+          </el-select>
+          <el-button
             size="small"
-            style="width: 170px"
-            :disabled="playing || busy"
-            placeholder="选择已有权重"
-            filterable
-            ><el-option
-              v-for="c in app.checkpoints"
-              :key="c.path"
-              :value="c.path"
-              :label="c.run_dir + ' / ' + c.name" /></el-select
-          ><el-button
-            size="small"
-            :disabled="busy || (policy === 'checkpoint' && !checkpoint)"
-            @click="create"
-            >{{ session ? '重建会话' : '创建会话' }}</el-button
-          ><el-button
+            :disabled="!policy || busy || playing"
+            @click="loadTasks"
+          >任务加载</el-button>
+          <el-button
             size="small"
             type="primary"
-            :disabled="!session || busy || snapshot?.done"
+            :disabled="!session || busy || playing || paused || snapshot.done"
             @click="play"
-            v-if="!playing"
-            >开始推演</el-button
-          ><el-button size="small" type="warning" @click="pause" v-else
-            >暂停</el-button
-          ><el-button
+          >开始推演</el-button>
+          <el-button
             size="small"
-            :disabled="!session || busy || playing || snapshot?.done"
-            @click="step()"
-            >单任务</el-button
-          ><el-button
-            size="small"
-            :disabled="!session || busy || playing || snapshot?.done"
-            @click="step(true)"
-            >整时隙</el-button
-          ><el-button
-            size="small"
-            :disabled="!session || busy || playing"
-            @click="reset"
-            >重置</el-button
-          >
+            :disabled="paused ? busy || playing : !playing"
+            @click="paused ? play() : (paused = true)"
+          >{{ paused ? '继续推演' : '暂停推演' }}</el-button>
         </div>
         <div class="overview-network-scene">
           <NetworkMonitorScene
@@ -323,9 +272,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <section class="monitor-panel dispatch-panel">
-        <h2 class="monitor-title">
-          任务调度明细<small>点击任务查看实际路径</small>
-        </h2>
+        <h2 class="monitor-title">任务调度明细</h2>
         <TaskFlowTable
           :snapshot="snapshot"
           compact
@@ -335,12 +282,8 @@ onBeforeUnmount(() => {
     </div>
     <div class="dashboard-right">
       <section class="monitor-panel task-generation">
-        <h2 class="monitor-title">
-          任务产生<small
-            >{{ snapshot?.terminals.length ?? '—' }} 个任务源</small
-          >
-        </h2>
-        <div class="task-generation-body">
+        <h2 class="monitor-title">任务产生</h2>
+        <div v-if="snapshot" class="task-generation-body">
           <div class="task-totals">
             <span
               >本轮任务总数 <b>{{ snapshot?.total_tasks ?? '—' }}</b></span
@@ -436,54 +379,21 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
-      <section class="monitor-panel strategy-panel">
-        <h2 class="monitor-title">调度策略</h2>
-        <div class="strategy-body">
-          <div class="strategy-name">
-            <b>{{ strategy }}</b><small :class="playing ? 'good' : 'muted'">{{
-              playing ? '运行中' : session ? '已就绪' : '未启动'
-            }}</small>
-          </div>
-          <div class="strategy-param">
-            路径最大跳数：<b>{{ config?.max_hops ?? '—' }}</b>
-          </div>
-          <div class="strategy-param">
-            拓扑动态更新：<b>{{
-              snapshot?.topology_period_slots
-                ? '每 ' + snapshot.topology_period_slots + ' 时隙'
-                : '—'
-            }}</b>
-          </div>
+      <section class="monitor-panel utilization">
+        <h2 class="monitor-title">资源利用率</h2>
+        <div class="util-body">
           <div
-            v-if="activePolicy === 'checkpoint'"
-            class="checkpoint-source"
-            :title="activeCheckpoint"
+            v-for="(name, i) in resources"
+            :key="name"
+            class="total-resource"
           >
-            {{ activeCheckpoint }}
+            <b :class="'resource-name-' + i">{{ name }}</b>
+            <div class="meter">
+              <i :class="'resource-' + i" :style="{ width: used[i] + '%' }"></i>
+            </div>
+            <span>{{ fmt(used[i], 1) }}%</span>
           </div>
-          <div class="workflow-heading">GAT-PPO 调度原理</div>
-          <div class="strategy-flow">
-            <template
-              v-for="(s, i) in [
-                ['任务', '请求'],
-                ['GAT', '拓扑感知'],
-                ['PPO', '联合决策'],
-                ['执行与', '反馈'],
-              ]"
-              :key="i"
-              ><span v-if="i" class="flow-arrow">➜</span>
-              <div>
-                <b>{{ s[0] }}<br />{{ s[1] }}</b>
-              </div></template
-            >
-          </div>
-          <p class="strategy-note">
-            {{
-              activePolicy === 'checkpoint'
-                ? '当前按所选权重推理，模型类型以训练记录为准。'
-                : '当前使用启发式策略；上方为 GAT-PPO 原理示意。'
-            }}
-          </p>
+          <ResourceTrend :samples="samples" />
         </div>
       </section>
     </div>

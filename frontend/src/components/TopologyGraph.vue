@@ -325,7 +325,7 @@ function end() {
             :y="node.y + 40"
             :class="['node-profile', node.profile]"
           >
-            {{ node.profile === 'balanced' ? '中继' : node.profile }}
+            {{ node.profile === 'balanced' ? '算力均衡' : node.profile }}
           </text>
           <title>
             {{ node.label

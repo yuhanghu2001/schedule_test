@@ -23,10 +23,10 @@ class Config:
     edge_topology: str = "ring"  # 旧配置保留环和随机弦；当前预设使用八邻接网格
     max_hops: int = 4
     k_routes_per_destination: int = 3
-    link_flap_prob: float = 0.12
+    link_flap_prob: float = 0.20
     congestion_ar_coef: float = 0.65
     congestion_step_noise: float = 0.15
-    link_spike_prob: float = 0.15
+    link_spike_prob: float = 0.25
     link_spike_min: float = 0.15
     link_spike_max: float = 0.35
     link_rate_fluctuation: float = 0.25
@@ -35,8 +35,8 @@ class Config:
     congestion_max: float = 0.6
     congestion_noise: float = 0.15
     congestion_realized_max: float = 0.95
-    link_rate_min_mbps: float = 120.0
-    link_rate_max_mbps: float = 360.0
+    link_rate_min_mbps: float = 200.0
+    link_rate_max_mbps: float = 500.0
     cloud_rate_min_mbps: float = 50.0
     cloud_rate_max_mbps: float = 200.0
     radio_rate_min_mbps: float = 60.0
@@ -72,8 +72,8 @@ class Config:
     node_queue_capacity: tuple[int, ...] = ()
 
     # 任务时限与卸载
-    deadline_slack_min: float = 1.8
-    deadline_slack_max: float = 3.0
+    deadline_slack_min: float = 2.2
+    deadline_slack_max: float = 3.5
 
     # 连续优化子问题
     radio_bandwidth_mhz: float = 20.0
@@ -91,12 +91,12 @@ class Config:
     reward_beta_load: float = 1.0
     reward_penalty_incomplete: float = 1.0
     reward_penalty_invalid: float = 1.0
-    reward_penalty_conditional_reject: float = 1.0
+    reward_penalty_conditional_reject: float = 2.5
     reward_delay_ref: float = 1.0
     reward_energy_ref: float = 3.0
-    # 随机非拒绝策略(1042—1046)：D̄_rand=0.09128975，t̄_rand=0.85385720s。
-    reward_variance_ref: float = 0.0059
-    reward_version: str = "v7_edge_bottleneck"
+    # 随机非拒绝策略（种子 1042–1046）实测 D_ref ≈ 0.00445229。
+    reward_variance_ref: float = 0.0045
+    reward_version: str = "v8_dynamic_bottleneck"
     observation_version: str = "v4_edge_only_4d_edges"
 
     # GAT-PPO 网络与训练
@@ -127,7 +127,7 @@ def load_config(name: str = "default") -> Config:
         return replace(
             cfg, topology_period_slots=4,
             congestion_min=0.45, congestion_max=0.8, arrival_rate=24.0,
-            link_flap_prob=0.18, link_spike_prob=0.25, link_rate_fluctuation=0.35,
+            link_flap_prob=0.25, link_spike_prob=0.35, link_rate_fluctuation=0.35,
         )
     if name == "small_smoke":
         return replace(
