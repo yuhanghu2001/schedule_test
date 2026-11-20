@@ -7,6 +7,7 @@ import NetworkMonitorScene from '../components/NetworkMonitorScene.vue'
 import NodeResourcePanel from '../components/NodeResourcePanel.vue'
 import TaskFlowTable from '../components/TaskFlowTable.vue'
 import ResourceTrend from '../components/ResourceTrend.vue'
+import AlgorithmDemoPanel from '../components/AlgorithmDemoPanel.vue'
 const app = useAppStore(),
   route = useRoute()
 const snapshot = ref(null),
@@ -25,18 +26,14 @@ const resources = ['CPU', 'NPU', 'FPGA'],
 const policies = {
   shortest_fastest: {
     name: '最短最快启发式算法',
-    rule: '优先选跳数最少的方案。跳数相同则选分配算力最大的，再依次比较估算时延和能耗，取更低者。',
   },
   greedy_estimate: {
     name: '贪心估计启发式算法',
-    rule: '将估算时延和能耗分别归一化后加权求和，选择总代价最低的可行方案。',
   },
   random: {
     name: '随机算法',
-    rule: '在可行方案和拒绝动作之间等概率抽样，因此有可行方案时也可能拒绝。',
   },
 }
-const strategySteps = ['任务到达', '筛选候选', '选择动作', '执行反馈']
 const used = computed(() =>
   resources.map((_, i) =>
     snapshot.value
@@ -58,10 +55,6 @@ const completed = computed(
       (t) => t.accepted && t.completed,
     ).length,
 )
-const maxHops = computed(() =>
-  app.env?.config.max_hops ?? app.presets[app.env?.preset_name]?.max_hops,
-)
-const strategy = computed(() => policies[policy.value]?.name || '请选择调度算法')
 const strategyStatus = computed(() => {
   if (!session.value) return '未加载'
   if (snapshot.value.done) return '推演完成'
@@ -99,6 +92,11 @@ function releaseSession() {
 }
 function changePolicy() {
   if (session.value) return preview()
+}
+function selectPolicy(value) {
+  if (policy.value === value) return
+  policy.value = value
+  changePolicy()
 }
 async function loadTasks() {
   busy.value = true
@@ -183,47 +181,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
-      <section class="monitor-panel strategy-panel">
-        <h2 class="monitor-title">调度策略</h2>
-        <div class="strategy-body">
-          <div class="strategy-name">
-            <b>{{ strategy }}</b>
-            <small :class="playing && !paused ? 'good' : 'muted'">{{ strategyStatus }}</small>
-          </div>
-          <div class="strategy-params">
-            <div class="strategy-param">
-              边缘段最大跳数 <b>{{ maxHops ?? '—' }}</b>
-            </div>
-            <div class="strategy-param">
-              拓扑重建 <b>{{
-                snapshot?.topology_period_slots
-                  ? '每 ' + snapshot.topology_period_slots + ' 时隙'
-                  : '—'
-              }}</b>
-            </div>
-          </div>
-          <div class="workflow-heading">共同调度流程</div>
-          <div class="strategy-flow">
-            <template v-for="(step, i) in strategySteps" :key="step">
-              <span v-if="i" class="flow-arrow" aria-hidden="true">→</span>
-              <div><b>{{ step }}</b></div>
-            </template>
-          </div>
-          <p class="strategy-explanation">
-            按服务、资源容量、链路和时限筛选执行节点、计算资源与路径的组合。执行后更新资源和任务状态。无可行方案则拒绝。
-          </p>
-          <div class="strategy-rules">
-            <article
-              v-for="(algorithm, key) in policies"
-              :key="key"
-              :class="{ selected: policy === key }"
-            >
-              <h3>{{ algorithm.name }}</h3>
-              <p>{{ algorithm.rule }}</p>
-            </article>
-          </div>
-        </div>
-      </section>
+      <AlgorithmDemoPanel
+        :model-value="policy"
+        :disabled="playing || busy"
+        :status="strategyStatus"
+        @update:model-value="selectPolicy"
+      />
     </div>
     <div class="dashboard-center">
       <section class="monitor-panel network-panel">

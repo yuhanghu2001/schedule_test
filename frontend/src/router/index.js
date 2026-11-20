@@ -10,6 +10,7 @@ export default createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: OverviewDashboard },
+    { path: '/logs', component: () => import('../views/TrainingLogs.vue') },
     { path: '/nodes', component: NodeManagement },
     { path: '/topology', component: TopologyMonitor },
     { path: '/resources', component: OverviewDashboard },

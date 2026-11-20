@@ -31,6 +31,7 @@ onUnmounted(() => clearInterval(timer))
     </header>
     <nav class="screen-nav" aria-label="主导航">
       <router-link to="/" exact-active-class="active">系统总览</router-link
+      ><router-link to="/logs" active-class="active">模型训练</router-link
       ><router-link to="/topology" active-class="active">拓扑监控</router-link
       ><router-link to="/nodes" active-class="active">节点管理</router-link>
       <div class="secondary-nav">
