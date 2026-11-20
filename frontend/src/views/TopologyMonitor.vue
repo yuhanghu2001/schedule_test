@@ -19,8 +19,8 @@ const selected = computed(() => {
 async function preview() {
   busy.value = true
   try {
-    if (!app.env) await app.loadPresets()
-    snapshot.value = await api.post('/env/preview', app.env)
+    if (!app.dispatchEnv) await app.loadPresets()
+    snapshot.value = await api.post('/env/preview', app.dispatchEnv)
   } finally {
     busy.value = false
   }

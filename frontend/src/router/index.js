@@ -11,6 +11,7 @@ export default createRouter({
   routes: [
     { path: '/', component: OverviewDashboard },
     { path: '/logs', component: () => import('../views/TrainingLogs.vue') },
+    { path: '/dispatch-logs', component: () => import('../views/DispatchLogs.vue') },
     { path: '/nodes', component: NodeManagement },
     { path: '/topology', component: TopologyMonitor },
     { path: '/resources', component: OverviewDashboard },

@@ -15,7 +15,7 @@ function render() {
       itemWidth: 12,
       itemHeight: 6,
     },
-    grid: { left: 38, right: 12, top: 35, bottom: 27 },
+    grid: { left: 38, right: 12, top: 27, bottom: 23 },
     xAxis: {
       type: 'category',
       boundaryGap: false,
@@ -27,7 +27,8 @@ function render() {
       type: 'value',
       min: 0,
       max: 100,
-      axisLabel: { color: '#a8c4e3', formatter: '{value}%', fontSize: 10 },
+      splitNumber: 2,
+      axisLabel: { color: '#a8c4e3', formatter: '{value}%', fontSize: 10, hideOverlap: true },
       splitLine: { lineStyle: { color: '#12365a' } },
     },
     series: ['CPU', 'NPU', 'FPGA'].map((name, i) => ({

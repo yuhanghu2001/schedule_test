@@ -1,15 +1,20 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
 import api from '../api/client'
 import NetworkMonitorScene from '../components/NetworkMonitorScene.vue'
 import NodeResourcePanel from '../components/NodeResourcePanel.vue'
 import TaskFlowTable from '../components/TaskFlowTable.vue'
 import ResourceTrend from '../components/ResourceTrend.vue'
-import AlgorithmDemoPanel from '../components/AlgorithmDemoPanel.vue'
+import NetworkResourcePanel from '../components/NetworkResourcePanel.vue'
+import DispatchScenarioProfile from '../components/DispatchScenarioProfile.vue'
+import { checkpointBatch, dispatchAlgorithms, dispatchCheckpointNames } from '../utils/dispatchAlgorithms'
+import { dispatchScenarios } from '../utils/dispatchScenarios'
+import { linkHealth } from '../utils/linkTelemetry'
 const app = useAppStore(),
-  route = useRoute()
+  route = useRoute(),
+  router = useRouter()
 const snapshot = ref(null),
   session = ref(null),
   selectedPath = ref(null),
@@ -17,23 +22,19 @@ const snapshot = ref(null),
   drawer = ref(false),
   busy = ref(false),
   playing = ref(false),
-  paused = ref(false)
+  paused = ref(false),
+  completionDialog = ref(false)
 const policy = ref(''),
+  checkpoint = ref(''),
   samples = ref([])
 let disposed = false
+let loadedRun
 const resources = ['CPU', 'NPU', 'FPGA'],
   taskNames = ['图像识别', '目标检测', '视频分析', '语音处理', '信号计算']
-const policies = {
-  shortest_fastest: {
-    name: '最短最快启发式算法',
-  },
-  greedy_estimate: {
-    name: '贪心估计启发式算法',
-  },
-  random: {
-    name: '随机算法',
-  },
-}
+const modelWeights = computed(() => dispatchCheckpointNames[policy.value])
+const checkpointOptions = computed(() => modelWeights.value
+  ? app.checkpoints.filter(file => modelWeights.value.includes(file.name))
+  : [])
 const used = computed(() =>
   resources.map((_, i) =>
     snapshot.value
@@ -55,21 +56,15 @@ const completed = computed(
       (t) => t.accepted && t.completed,
     ).length,
 )
-const strategyStatus = computed(() => {
-  if (!session.value) return '未加载'
-  if (snapshot.value.done) return '推演完成'
-  if (paused.value) return '已暂停'
-  if (playing.value) return '运行中'
-  return snapshot.value.task_index ? '推演已中断' : '任务已加载'
-})
 const fmt = (v, n = 2) => (v == null ? '—' : Number(v).toFixed(n))
+const networkLinks = computed(() => snapshot.value && linkHealth(snapshot.value.links))
 function receive(data, reset = false) {
   snapshot.value = data
   selectedPath.value = null
   if (reset) samples.value = []
   samples.value = [
     ...samples.value,
-    { task: data.task_index, values: [...used.value] },
+    { task: data.task_index, values: [...used.value], linkUse: networkLinks.value.utilization },
   ].slice(-40)
   if (selected.value?.speed)
     selected.value = data.nodes.find((n) => n.id === selected.value.id)
@@ -78,8 +73,8 @@ async function preview() {
   busy.value = true
   try {
     await releaseSession()
-    if (!Object.keys(app.presets).length) await app.loadPresets()
-    receive(await api.post('/env/preview', app.env), true)
+    if (!app.dispatchEnv) await app.loadPresets()
+    receive(await api.post('/env/preview', app.dispatchEnv), true)
   } finally {
     busy.value = false
   }
@@ -91,26 +86,40 @@ function releaseSession() {
   if (id) return api.delete(`/sim/sessions/${id}`)
 }
 function changePolicy() {
+  checkpoint.value = ''
+  return changeCheckpoint()
+}
+function changeCheckpoint() {
   if (session.value) return preview()
 }
-function selectPolicy(value) {
-  if (policy.value === value) return
-  policy.value = value
-  changePolicy()
+function selectScenario(event) {
+  app.dispatchScenario = event.target.value
+  snapshot.value = null
+  return preview()
 }
 async function loadTasks() {
+  const environment = app.dispatchEnv
+  const algorithm = policy.value
+  const checkpointPath = checkpoint.value || null
   busy.value = true
   try {
     await releaseSession()
     const data = await api.post('/sim/sessions', {
-      ...app.env,
-      policy: policy.value,
+      ...environment,
+      policy: checkpointPath ? 'checkpoint' : algorithm,
+      checkpoint_path: checkpointPath,
     })
     if (disposed) {
       await api.delete(`/sim/sessions/${data.session_id}`)
       return
     }
     session.value = data.session_id
+    loadedRun = {
+      environment: JSON.stringify(environment),
+      algorithm,
+      checkpointPath,
+      samples: [],
+    }
     receive(data.snapshot, true)
   } finally {
     busy.value = false
@@ -121,7 +130,15 @@ async function play() {
   playing.value = true
   try {
     while (!disposed && !paused.value && !snapshot.value.done) {
-      receive(await api.post(`/sim/sessions/${session.value}/step`, {}))
+      const previousSlot = snapshot.value.slot
+      const data = await api.post(`/sim/sessions/${session.value}/step`, {})
+      if (disposed) return
+      if (data.done || data.slot !== previousSlot) loadedRun.samples.push(data.metrics)
+      receive(data)
+      if (data.done) {
+        app.recordDispatchRun(loadedRun)
+        completionDialog.value = true
+      }
       if (!paused.value && !snapshot.value.done)
         await new Promise((resolve) => setTimeout(resolve, 800))
     }
@@ -133,6 +150,10 @@ async function play() {
 function inspect(node) {
   selected.value = node
   drawer.value = true
+}
+function openDispatchLogs() {
+  completionDialog.value = false
+  return router.push('/dispatch-logs')
 }
 onMounted(preview)
 onBeforeUnmount(() => {
@@ -181,17 +202,23 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
-      <AlgorithmDemoPanel
-        :model-value="policy"
-        :disabled="playing || busy"
-        :status="strategyStatus"
-        @update:model-value="selectPolicy"
+      <NetworkResourcePanel
+        :snapshot="snapshot"
+        :links="networkLinks"
+        :samples="samples"
+        @select-node="inspect"
       />
     </div>
     <div class="dashboard-center">
       <section class="monitor-panel network-panel">
         <h2 class="monitor-title">动态云边端网络拓扑</h2>
         <div class="overview-controls">
+          <label class="overview-scenario-control">
+            <span id="overview-load-scenario">加载场景</span>
+            <select class="dispatch-scenario-select" aria-labelledby="overview-load-scenario" :value="app.dispatchScenario" :disabled="playing || busy" @change="selectScenario">
+              <option v-for="(name, key) in dispatchScenarios" :key="key" :value="key">{{ name }}</option>
+            </select>
+          </label>
           <el-select
             v-model="policy"
             aria-label="调度算法"
@@ -202,15 +229,26 @@ onBeforeUnmount(() => {
             @change="changePolicy"
           >
             <el-option
-              v-for="(algorithm, key) in policies"
-              :key="key"
+              v-for="algorithm in dispatchAlgorithms"
+              :key="algorithm.id"
               :label="algorithm.name"
-              :value="key"
+              :value="algorithm.id"
             />
           </el-select>
+          <select
+            v-if="modelWeights"
+            v-model="checkpoint"
+            class="dispatch-scenario-select overview-checkpoint"
+            aria-label="模型权重批次"
+            :disabled="playing || busy || !checkpointOptions.length"
+            @change="changeCheckpoint"
+          >
+            <option value="" disabled>{{ checkpointOptions.length ? '请选择权重批次' : '暂无该模型权重' }}</option>
+            <option v-for="file in checkpointOptions" :key="file.path" :value="file.path">{{ checkpointBatch(file.run_dir) }}</option>
+          </select>
           <el-button
             size="small"
-            :disabled="!policy || busy || playing"
+            :disabled="!policy || (modelWeights && !checkpoint) || busy || playing"
             @click="loadTasks"
           >任务加载</el-button>
           <el-button
@@ -245,7 +283,15 @@ onBeforeUnmount(() => {
     </div>
     <div class="dashboard-right">
       <section class="monitor-panel task-generation">
-        <h2 class="monitor-title">任务产生</h2>
+        <header class="monitor-title task-generation-heading">
+          <h2>任务产生</h2>
+          <label class="task-scenario-control">
+            <span id="overview-task-scenario">任务场景</span>
+            <select class="dispatch-scenario-select" aria-labelledby="overview-task-scenario" :value="app.dispatchScenario" :disabled="playing || busy" @change="selectScenario">
+              <option v-for="(name, key) in dispatchScenarios" :key="key" :value="key">{{ name }}</option>
+            </select>
+          </label>
+        </header>
         <div v-if="snapshot" class="task-generation-body">
           <div class="task-totals">
             <span
@@ -254,6 +300,7 @@ onBeforeUnmount(() => {
               >按期完成 <b>{{ completed }}</b></span
             >
           </div>
+          <DispatchScenarioProfile :config="app.dispatchEnv.config" />
           <div class="distribution">
             <h3>
               已调度业务分布（5 类）<small
@@ -360,6 +407,19 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+    <el-dialog
+      v-model="completionDialog"
+      title="推演结束"
+      width="min(400px, calc(100vw - 32px))"
+      align-center
+      :show-close="false"
+    >
+      <p>本轮推演已完成，可以前往调度日志查看结果。</p>
+      <template #footer>
+        <el-button @click="completionDialog = false">留在总览</el-button>
+        <el-button type="primary" @click="openDispatchLogs">查看调度日志</el-button>
+      </template>
+    </el-dialog>
     <el-drawer
       v-model="drawer"
       :title="selected?.kind === 'terminal' ? '端侧设备详情' : '计算节点详情'"

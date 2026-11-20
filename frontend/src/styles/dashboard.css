@@ -380,6 +380,33 @@ a {
 .overview-controls .el-button {
   padding: 5px 9px;
 }
+.overview-scenario-control,
+.task-scenario-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #b8d2eb;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.task-scenario-control { margin-left: auto; }
+.dispatch-scenario-select {
+  height: 26px;
+  padding: 0 5px;
+  font: inherit;
+  color: #dcecff;
+  background: #082342;
+  border: 1px solid #28638f;
+  border-radius: 4px;
+}
+.dispatch-scenario-select:focus-visible {
+  outline: 2px solid #6ee6ff;
+  outline-offset: 2px;
+}
+.dispatch-scenario-select:disabled { opacity: .65; }
+.overview-checkpoint { font-size: 12px; max-width: 155px; }
 .layered-topology {
   position: relative;
   flex: 1;
@@ -1985,7 +2012,32 @@ a {
   flex: 0 0 auto;
 }
 .task-generation {
-  flex: 1.4;
+  flex: 2;
+}
+.task-generation-heading h2 { font: inherit; }
+.dispatch-scenario-profile {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 8px;
+  flex-shrink: 0;
+  border: 1px solid #155283;
+  border-radius: 4px;
+  background: #082342;
+  color: #b8d2eb;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.dispatch-scenario-profile > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 6px;
+}
+.dispatch-scenario-profile dd {
+  margin: 0;
+  color: #dcecff;
+  font-variant-numeric: tabular-nums;
 }
 .task-generation-body {
   display: flex;
@@ -2050,8 +2102,8 @@ a {
 }
 @media (max-width: 1700px) {
   .task-generation-body {
-    gap: 9px;
-    padding: 10px 8px;
+    gap: 7px;
+    padding: 7px 8px;
   }
   .task-generation .task-totals {
     padding: 8px 4px;
