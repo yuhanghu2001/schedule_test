@@ -62,6 +62,8 @@ episode_reward / N_T == objective_score
 
 ## 4. PPO 诊断和固定评估
 
+PPO、GAT-PPO 和打乱图观测的 GAT-PPO 在每回合更新前按 V1 方案设置学习率和熵系数。首回合使用初值，末回合的 Actor 和 Critic 学习率均线性降至各自初值的 10%，熵系数从 `0.01` 线性降至 `0.001`。只训练一个回合时使用初值，续训时使用累计回合序号和 `--episodes` 指定的总回合数计算进度。
+
 每轮记录 `policy_loss,value_loss,entropy,normalized_entropy,approx_kl,clip_fraction,explained_variance,grad_norm_preclip,value_mean,return_mean`。训练期间的随机动作曲线不用于选择模型；每25轮在固定验证种子上贪心评估，按 `objective_score` 均值保存 best checkpoint，并始终保存 last checkpoint。checkpoint 记录 `reward_version` 和 `observation_version`。既有原型的观测为三维边特征，负载参考量按旧场景标定。Plan C 实验随 checkpoint 记录 `reward_version="v8_dynamic_bottleneck"` 和 `observation_version="v4_edge_only_4d_edges"`。
 
 PPO-Clip 在采样时保存旧策略的 `log_prob`，并在当前轨迹的5轮更新中固定它作为概率比分母；下一轮轨迹采样时直接使用更新后的策略。因此当前标准 PPO 实现不维护独立的目标策略网络，也不使用 `kappa=0.995` 的软更新；将该系数加入会改变为图中 MPPO 的旧策略网络变体，不再是当前 PPO-Clip 更新口径。

@@ -1,4 +1,4 @@
-"""统一训练入口：GAT-PPO、PPO 或两算法训练与对比绘图。"""
+"""统一训练入口：GAT-PPO、PPO、DQN、DDPG 与对比绘图。"""
 import argparse
 from dataclasses import asdict, replace
 from datetime import datetime
@@ -13,12 +13,31 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from src.algorithms.ddpg import DDPG, DDPGTrainer
+from src.algorithms.dqn import DQN, DQNTrainer
 from src.algorithms.ppo import PPOTrainer
 from src.config import Config, load_config
 from src.environment import EdgeEnv, model_environment
 from src.evaluation import evaluate_policy
 from src.models.policy import GATPPO, MODEL_NAMES
 from src.plotting import save_run_plots, save_comparison_plots
+
+
+REPLAY_TRAINERS = {"dqn": DQNTrainer, "ddpg": DDPGTrainer}
+TRAIN_MODEL_NAMES = {**MODEL_NAMES, "dqn": "dqn", "ddpg": "ddpg"}
+
+
+def make_model(cfg, model_type):
+    if model_type == "dqn":
+        return DQN(cfg)
+    if model_type == "ddpg":
+        return DDPG(cfg)
+    return GATPPO(
+        gat_hidden=cfg.gat_hidden_dim,
+        actor_hidden=cfg.actor_hidden_dim,
+        critic_hidden=cfg.critic_hidden_dim,
+        use_gat=model_type != "ppo",
+    )
 
 
 def new_run_dir():
@@ -40,7 +59,6 @@ def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_sc
         "reward_version": cfg.reward_version,
         "observation_version": cfg.observation_version,
         "model": model.state_dict(),
-        "optimizer": trainer.optimizer.state_dict(),
         "episode": episode,
         "best_evaluation_score": best_score,
         "torch_rng_state": torch.get_rng_state(),
@@ -54,6 +72,10 @@ def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_sc
         },
         "env_rng_state": env.rng.bit_generator.state,
     }
+    if model_type in REPLAY_TRAINERS:
+        checkpoint["trainer"] = trainer.state_dict()
+    else:
+        checkpoint["optimizer"] = trainer.optimizer.state_dict()
     torch.save(checkpoint, path)
 
 
@@ -63,7 +85,7 @@ def train_one(args, model_type, run_dir):
     if resume_path:
         resume_checkpoint = torch.load(resume_path, map_location="cpu", weights_only=True)
         cfg = Config(**resume_checkpoint["config"])
-        model_type = MODEL_NAMES[resume_checkpoint["model_type"]]
+        model_type = TRAIN_MODEL_NAMES[resume_checkpoint["model_type"]]
     else:
         cfg = load_config(args.config)
         if args.seed is not None:
@@ -83,19 +105,18 @@ def train_one(args, model_type, run_dir):
     last_output = run_dir / last_name
     best_output = run_dir / f"best_{model_type}.pt"
 
-    model = GATPPO(
-        gat_hidden=cfg.gat_hidden_dim,
-        actor_hidden=cfg.actor_hidden_dim,
-        critic_hidden=cfg.critic_hidden_dim,
-        use_gat=model_type != "ppo",
-    ).to(device)
-    trainer = PPOTrainer(model, cfg)
+    model = make_model(cfg, model_type).to(device)
+    off_policy = model_type in REPLAY_TRAINERS
+    trainer = REPLAY_TRAINERS.get(model_type, PPOTrainer)(model, cfg)
     env = model_environment(EdgeEnv(cfg), model_type, cfg.seed)
     start_episode = 0
     best_score = -np.inf
     if resume_checkpoint:
         model.load_state_dict(resume_checkpoint["model"])
-        trainer.optimizer.load_state_dict(resume_checkpoint["optimizer"])
+        if off_policy:
+            trainer.load_state_dict(resume_checkpoint["trainer"])
+        else:
+            trainer.optimizer.load_state_dict(resume_checkpoint["optimizer"])
         start_episode = resume_checkpoint["episode"]
         torch.set_rng_state(resume_checkpoint["torch_rng_state"])
         if device.type == "cuda" and resume_checkpoint.get("cuda_rng_state") is not None:
@@ -135,8 +156,12 @@ def train_one(args, model_type, run_dir):
         with (open(run_dir / "train_metrics.jsonl", "x", encoding="utf-8") as metrics_file,
               open(run_dir / "evaluation_metrics.jsonl", "x", encoding="utf-8") as evaluation_file):
             for episode_index in range(start_episode, args.episodes):
-                rollout, metrics = trainer.collect_episode(env)
-                update_metrics = trainer.update(rollout)
+                if off_policy:
+                    update_metrics, metrics = trainer.train_episode(env, episode_index, args.episodes)
+                else:
+                    rollout, metrics = trainer.collect_episode(env)
+                    trainer.set_schedule(episode_index, args.episodes)
+                    update_metrics = trainer.update(rollout)
                 last_episode = episode_index + 1
                 record = {
                     "model_type": model_type,
@@ -187,13 +212,13 @@ def train_one(args, model_type, run_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="训练 GAT-PPO、PPO，或训练两者并生成对比图")
+    parser = argparse.ArgumentParser(description="顺序训练所选算法并生成对比图")
     parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
                         default="default")
     parser.add_argument("--episodes", type=int, default=500, help="训练结束时的总回合数")
-    parser.add_argument("--model", nargs="+", choices=(*MODEL_NAMES, "and", "gatppo and ppo", "gatpppo and ppo"),
+    parser.add_argument("--model", nargs="+", choices=(*TRAIN_MODEL_NAMES, "and", "gatppo and ppo", "gatpppo and ppo"),
                         metavar="MODEL",
-                        default=["gatppo"], help="gatppo / ppo / gatppo and ppo（可加引号）")
+                        default=["gatppo"], help="gatppo ppo dqn ddpg；支持单算法及历史别名")
     parser.add_argument("--seed", type=int, help="覆盖新训练运行的配置种子")
     parser.add_argument("--run-dir", help="默认创建北京时间 results 目录；开发验证须指定临时目录")
     parser.add_argument("--output", help="单算法 last checkpoint 的文件名")
@@ -201,12 +226,14 @@ def main():
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
     parser.add_argument("--threads", type=int, default=2)
     args = parser.parse_args()
-    models = [MODEL_NAMES[name] for name in " ".join(args.model).split() if name != "and"]
-    if models not in (["gatppo"], ["ppo"], ["shuffled_gat"], ["gatppo", "ppo"]):
-        parser.error("--model 使用 gatppo、ppo 或 gatppo and ppo")
-    comparison = len(models) == 2
+    models = list(dict.fromkeys(
+        TRAIN_MODEL_NAMES[name] for name in " ".join(args.model).split() if name != "and"
+    ))
+    if not models:
+        parser.error("--model 至少需要一个算法")
+    comparison = len(models) > 1
     if comparison and (args.resume or args.output):
-        parser.error("双算法模式分别保存权重；--resume 和 --output 用于单算法模式")
+        parser.error("--resume 和 --output 用于单算法模式")
     run_dir = repository_path(args.run_dir) if args.run_dir else new_run_dir()
     if comparison:
         run_dir.mkdir(parents=True, exist_ok=bool(args.run_dir))

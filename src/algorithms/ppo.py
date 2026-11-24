@@ -8,6 +8,7 @@ class PPOTrainer:
     def __init__(self, model, cfg):
         self.model = model
         self.cfg = cfg
+        self.ent_coef = cfg.ent_coef
         self.device = next(model.parameters()).device
         critic_parameters = list(model.critic.parameters())
         critic_parameter_ids = {id(parameter) for parameter in critic_parameters}
@@ -19,6 +20,13 @@ class PPOTrainer:
             {"params": actor_parameters, "lr": cfg.actor_learning_rate, "name": "actor"},
             {"params": critic_parameters, "lr": cfg.critic_learning_rate, "name": "critic"},
         ])
+
+    def set_schedule(self, episode_index, episodes):
+        progress = min(1.0, episode_index / max(1, episodes - 1))
+        lr_factor = 1.0 + (self.cfg.ppo_lr_end_factor - 1.0) * progress
+        self.optimizer.param_groups[0]["lr"] = self.cfg.actor_learning_rate * lr_factor
+        self.optimizer.param_groups[1]["lr"] = self.cfg.critic_learning_rate * lr_factor
+        self.ent_coef = self.cfg.ent_coef + (self.cfg.ppo_ent_coef_end - self.cfg.ent_coef) * progress
 
     def collect_episode(self, env):
         obs = env.reset()
@@ -74,7 +82,7 @@ class PPOTrainer:
                     ).square()
                     entropy = distribution.entropy()
                     batch_losses.append(policy_loss + self.cfg.vf_coef * value_loss
-                                        - self.cfg.ent_coef * entropy)
+                                        - self.ent_coef * entropy)
                     policy_losses.append(float(policy_loss.detach()))
                     value_losses.append(float(value_loss.detach()))
                     entropies.append(float(entropy.detach()))

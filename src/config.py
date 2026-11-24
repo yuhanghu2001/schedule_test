@@ -112,9 +112,53 @@ class Config:
     ppo_batch_size: int = 64
     vf_coef: float = 0.5
     ent_coef: float = 0.01
+    ppo_lr_end_factor: float = 0.1  # 学习率退火终值占初值的比例
+    ppo_ent_coef_end: float = 0.001  # 熵系数退火终值
     max_grad_norm: float = 0.5
     eval_interval: int = 25
     evaluation_seed_count: int = 5
+
+    # DQN 回放、目标网络和探索
+    dqn_learning_rate: float = 1e-4
+    dqn_buffer_size: int = 50_000
+    dqn_batch_size: int = 64
+    dqn_train_every: int = 4  # 环境步
+    dqn_target_sync: int = 1_000  # 硬同步间隔（环境步）
+    dqn_warmup_steps: int = 2_000
+    dqn_epsilon_start: float = 1.0
+    dqn_epsilon_end: float = 0.05
+    dqn_epsilon_decay_fraction: float = 0.6  # 训练回合占比
+    dqn_double: bool = False
+
+    # DDPG（Wolpertinger 离散映射）回放、软更新和探索
+    ddpg_actor_learning_rate: float = 1e-4
+    ddpg_critic_learning_rate: float = 1e-3
+    ddpg_tau: float = 0.005
+    ddpg_buffer_size: int = 50_000
+    ddpg_batch_size: int = 64
+    ddpg_train_every: int = 4  # 环境步
+    ddpg_warmup_steps: int = 2_000
+    ddpg_noise_start: float = 0.3
+    ddpg_noise_end: float = 0.05
+    ddpg_noise_decay_fraction: float = 0.6  # 训练回合占比
+    # 候选特征统一界限，第 7、8 列为环境缩放后的时延、能耗
+    ddpg_candidate_low: tuple[float, ...] = (0.0,) * 10
+    ddpg_candidate_high: tuple[float, ...] = (1., 1., 1., 1., 1., 1., 1., 5., 10., 1.)
+
+    # 时隙内元启发式搜索，允许的偏好秩为 0 至 max_rank，另设拒绝
+    ga_population: int = 16
+    ga_generations: int = 10
+    ga_crossover: float = 0.8
+    ga_mutation: float = 0.1
+    ga_elite: int = 2
+    ga_tournament_size: int = 3
+    ga_max_rank: int = 3
+    aco_ants: int = 16
+    aco_iterations: int = 10
+    aco_alpha: float = 1.0
+    aco_beta: float = 2.0
+    aco_evaporation: float = 0.3
+    aco_max_rank: int = 3
 
 
 def load_config(name: str = "default") -> Config:

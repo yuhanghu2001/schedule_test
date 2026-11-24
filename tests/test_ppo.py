@@ -30,6 +30,21 @@ class PPOTrainingTest(unittest.TestCase):
         self.assertEqual(small_smoke.episode_slots, 4)
         self.assertEqual(small_smoke.ppo_batch_size, 16)
 
+    def test_linear_schedule(self):
+        trainer = PPOTrainer(GATPPO(), load_config("small_smoke"))
+        actor, critic = trainer.optimizer.param_groups
+        self.assertEqual((actor["lr"], critic["lr"], trainer.ent_coef), (3e-4, 1e-3, 0.01))
+        for episode_index, episodes, actor_lr, critic_lr, ent_coef in (
+            (0, 3, 3e-4, 1e-3, 0.01),
+            (1, 3, 1.65e-4, 5.5e-4, 0.0055),
+            (2, 3, 3e-5, 1e-4, 0.001),
+            (0, 1, 3e-4, 1e-3, 0.01),
+        ):
+            trainer.set_schedule(episode_index, episodes)
+            self.assertAlmostEqual(actor["lr"], actor_lr, places=12)
+            self.assertAlmostEqual(critic["lr"], critic_lr, places=12)
+            self.assertAlmostEqual(trainer.ent_coef, ent_coef, places=12)
+
     def test_minibatch_update_changes_parameters(self):
         cfg = replace(
             load_config("small_smoke"),
