@@ -115,7 +115,7 @@ results/YYYYMMDD_HHMMSS/
 
 异构 DAG 模式通过 `enable_dag_mode` 开启，使用 `hetero_dag_default`、`hetero_dag_high_congestion`、`hetero_dag_smoke` 三个预设，分别继承传统三个场景的负载与网络参数。每个任务从图像识别、目标检测、视频分析、语音处理、信号计算五类 DAG 模板生成；子任务具备 CPU/NPU/FPGA 兼容性和核数、RAM、显存及 FPGA LUT/FF/BRAM/DSP 需求，并受算子亲和度、芯片层级画像、FPGA 重构、NPU 上下文载入和三级内部通信（同节点同芯 / 同节点跨芯 PCIe/DMA / 跨节点多跳）影响。deadline 根据源端实际无线速率、DAG 最长依赖路径工作量和配置化松弛系数生成。
 
-训练模型为 `dual_gatppo`（网络与任务 DAG 双图编码）、`single_gatppo`（仅网络图 GAT 编码，无 DAG-GAT）、`ppo` 和 `shuffled_gat`。策略使用无效动作掩码。可通过 `--preset hetero_dag_default --model dual_gatppo --episodes 500` 启动；`--preset` 与 `--config` 等效。DAG 评估增加 `dag_completion_rate`、`avg_dag_makespan_s`、`deadline_violation_rate`、`avg_dag_energy_j`、FPGA 重构、CPU/NPU/FPGA 三维负载及通信层级指标；`heft_hetero` 是对应异构 HEFT 启发式基线。相关实现与指标定义见 [环境开发说明](docs/01_环境开发说明书.md#异构-dag-模式enable_dag_modetrue)、[实验设计](docs/03_实验设计与指标.md#异构-dag-升级) 和 [奖励说明](docs/05_训练奖励与ppo对齐说明.md#5-异构-dag-的-v9-奖励与观测)。目前不据此宣称任何未完成的训练效果。
+训练模型为 `dual_gatppo`（网络与任务 DAG 双图编码）、`single_gatppo`（仅网络图 GAT 编码，无 DAG-GAT）、`ppo` 和 `shuffled_gat`。策略使用无效动作掩码。推荐直接通过根目录极简入口 `python train.py --dual_gatppo` 启动（训练轮数、场景预设、设备等参数统一在 `train.py` 顶部配置）；底层模块入口也支持 `--preset hetero_dag_default --model dual_gatppo --episodes 500`。DAG 评估增加 `dag_completion_rate`、`avg_dag_makespan_s`、`deadline_violation_rate`、`avg_dag_energy_j`、FPGA 重构、CPU/NPU/FPGA 三维负载及通信层级指标；`heft_hetero` 是对应异构 HEFT 启发式基线。相关实现与指标定义见 [环境开发说明](docs/01_环境开发说明书.md#异构-dag-模式enable_dag_modetrue)、[实验设计](docs/03_实验设计与指标.md#异构-dag-升级) 和 [奖励说明](docs/05_训练奖励与ppo对齐说明.md#5-异构-dag-的-v9-奖励与观测)。目前不据此宣称任何未完成的训练效果。
 
 ## 文件概览
 
