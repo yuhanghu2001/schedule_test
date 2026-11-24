@@ -1,6 +1,6 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
@@ -13,7 +13,6 @@ from sqlalchemy import select
 import torch
 
 from src.algorithms.ppo import PPOTrainer
-from src.config import Config
 from src.environment import EdgeEnv, model_environment
 from src.evaluation import evaluate_policy
 from src.models.policy import MODEL_NAMES
@@ -21,7 +20,7 @@ from src.plotting import load_jsonl, save_run_plots
 
 from ..config import REPO_ROOT, RESULTS_DIR
 from ..db import EnvConfig, EvaluationRecord, TrainingMetric, TrainingRun, row_dict
-from .sim_service import build_model, checkpoint_config, load_checkpoint
+from .sim_service import build_model, checkpoint_config, checkpoint_metadata, load_checkpoint
 
 BEIJING = ZoneInfo("Asia/Shanghai")
 RUN_TIMESTAMP = "%Y%m%d_%H%M%S"
@@ -37,6 +36,7 @@ def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_sc
         "config": asdict(cfg),
         "reward_version": cfg.reward_version,
         "observation_version": cfg.observation_version,
+        "enable_dag_mode": cfg.enable_dag_mode,
         "model": model.state_dict(),
         "optimizer": trainer.optimizer.state_dict(),
         "episode": episode,
@@ -160,7 +160,9 @@ def _scores(records):
 
 def list_checkpoints(results_dir=RESULTS_DIR):
     return [
-        {"name": path.name, "path": str(path.resolve()), "run_dir": path.parent.relative_to(results_dir).as_posix()}
+        {"name": path.name, "path": str(path.resolve()),
+         "run_dir": path.parent.relative_to(results_dir).as_posix(),
+         **checkpoint_metadata(load_checkpoint(path.resolve()))}
         for path in sorted(results_dir.rglob("*.pt"), reverse=True)
     ]
 
@@ -267,8 +269,7 @@ class TrainManager:
         checkpoint = load_checkpoint(resume_path) if resume_path else None
         start_episode = 0
         if checkpoint is not None:
-            cfg = replace(checkpoint_config(checkpoint), reward_version=Config.reward_version,
-                          observation_version=Config.observation_version)
+            cfg = checkpoint_config(checkpoint)
             model_type = checkpoint["model_type"]
             start_episode = checkpoint["episode"]
 
@@ -295,6 +296,7 @@ class TrainManager:
                 "resume": resume_path,
                 "reward_version": cfg.reward_version,
                 "observation_version": cfg.observation_version,
+                "enable_dag_mode": cfg.enable_dag_mode,
                 "validation_seeds": list(range(cfg.evaluation_seed,
                                                cfg.evaluation_seed + cfg.evaluation_seed_count)),
                 "best_output": str(best),

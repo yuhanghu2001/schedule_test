@@ -99,15 +99,25 @@ const frames = computed(() =>
       }
     }),
 )
-const chosen = computed(() => props.selected || props.snapshot?.last_decision)
+const chosen = computed(() => {
+  const selected = props.selected || props.snapshot?.last_decision
+  if (props.snapshot?.enable_dag_mode && selected?.dag_id != null && !selected.flows) return props.snapshot.recent_tasks.find(r => r.dag_id === selected.dag_id && r.subtask_id === selected.subtask_id) || selected
+  return selected
+})
+const flowKeys = computed(() => {
+  if (!chosen.value) return []
+  if (!props.snapshot?.enable_dag_mode) return [['t' + chosen.value.source, ...(chosen.value.path || []).map(n => 'n' + n)]]
+  return (chosen.value.flows || []).map(flow => {
+    const keys = flow.path.map(n => 'n' + n)
+    if (flow.pred_id === -1) keys.unshift('t' + chosen.value.source)
+    if (flow.pred_id === -2) keys.push('t' + chosen.value.source)
+    return keys
+  })
+})
 const active = computed(() => chosen.value && chosen.value.destination >= 0)
 const pathPairs = computed(() => {
   if (!active.value) return []
-  const keys = [
-    't' + chosen.value.source,
-    ...chosen.value.path.map((n) => 'n' + n),
-  ]
-  return keys.slice(1).map((key, i) => [map.value[keys[i]], map.value[key]])
+  return flowKeys.value.flatMap(keys => keys.slice(1).map((key, i) => [map.value[keys[i]], map.value[key]]).filter(pair => pair[0] && pair[1]))
 })
 function boundary(a, b) {
   const centerY =
@@ -159,8 +169,8 @@ function involved(node) {
   return (
     active.value &&
     (node.kind === 'terminal'
-      ? chosen.value.source === node.id
-      : chosen.value.path.includes(node.id))
+      ? flowKeys.value.some(keys => keys.includes('t' + node.id))
+      : flowKeys.value.some(keys => keys.includes('n' + node.id)))
   )
 }
 function start(event, node) {

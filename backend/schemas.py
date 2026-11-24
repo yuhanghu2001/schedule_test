@@ -2,8 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Preset = Literal["default", "high_congestion", "small_smoke"]
-ModelType = Literal["gatppo", "ppo", "shuffled_gat", "gat", "flat", "gatpppo"]
+LegacyPreset = Literal["default", "high_congestion", "small_smoke"]
+DagPreset = Literal["hetero_dag_default", "hetero_dag_high_congestion", "hetero_dag_smoke"]
+Preset = Literal[LegacyPreset, DagPreset]
+ModelType = Literal["gatppo", "dual_gatppo", "single_gatppo", "ppo", "shuffled_gat", "gat", "flat", "gatpppo"]
+Baseline = Literal["shortest_fastest", "greedy_estimate", "heft_hetero"]
 
 
 class EnvRequest(BaseModel):
@@ -20,7 +23,7 @@ class EnvConfigCreate(EnvRequest):
 
 
 class SimCreate(EnvRequest):
-    policy: Literal["shortest_fastest", "greedy_estimate", "random", "checkpoint"] = (
+    policy: Literal[Baseline, ModelType, "random", "checkpoint"] = (
         "shortest_fastest"
     )
     checkpoint_path: str | None = None
@@ -50,7 +53,7 @@ class TrainingCreate(EnvRequest):
 
 
 class EvaluationStrategy(BaseModel):
-    method: Literal["shortest_fastest", "greedy_estimate", "checkpoint"]
+    method: Literal[Baseline, ModelType, "checkpoint"]
     name: str | None = None
     checkpoint_path: str | None = None
 

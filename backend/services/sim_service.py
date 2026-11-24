@@ -7,12 +7,14 @@ from uuid import uuid4
 import numpy as np
 import torch
 
-from src.baselines import greedy_estimate_action, shortest_fastest_action
+from src.baselines import baseline_action
 from src.config import Config, load_config
-from src.environment import EdgeEnv, model_environment, shuffle_graph_observation, ShuffledGraphEnv
+from src.environment import EdgeEnv, ShuffledGraphEnv, shuffle_graph_observation
 from src.models.gat import GATEncoder
-from src.models.policy import GATPPO, MODEL_NAMES
-from src.topology import _activate_link, edge_pairs
+from src.models.policy import DAGShuffledGraphEnv, GATPPO, MODEL_NAMES
+from src.resources import DEMAND_FIELDS
+from src.tasks import NPU, FPGA
+from src.topology import _activate_link, edge_pairs, node_tier_roles
 
 from ..config import REPO_ROOT
 
@@ -49,12 +51,26 @@ def load_checkpoint(path):
     return torch.load(REPO_ROOT / Path(path), map_location="cpu", weights_only=True)
 
 
+def checkpoint_metadata(checkpoint):
+    return {
+        "model_type": checkpoint["model_type"],
+        **{key: checkpoint.get(key, checkpoint["config"].get(key, getattr(Config, key)))
+           for key in ("observation_version", "reward_version", "enable_dag_mode")},
+    }
+
+
 def checkpoint_config(checkpoint):
     values = {key: value for key, value in checkpoint["config"].items()
               if key in Config.__dataclass_fields__}
+    metadata = checkpoint_metadata(checkpoint)
+    del metadata["model_type"]
+    values.update(metadata)
     state = checkpoint["model"]
+    encoder = "flat_encoder.0.weight" if values["enable_dag_mode"] and (
+        MODEL_NAMES[checkpoint["model_type"]] == "ppo"
+    ) else "gat.layer1.transform.weight"
     values.update(
-        gat_hidden_dim=state["gat.layer1.transform.weight"].shape[0],
+        gat_hidden_dim=state[encoder].shape[0],
         actor_hidden_dim=state["actor.0.weight"].shape[0],
         critic_hidden_dim=state["critic.0.weight"].shape[0],
     )
@@ -65,13 +81,10 @@ def build_model(cfg, model_type, checkpoint=None, *, inference=False):
     model_type = MODEL_NAMES[model_type]
     device = "meta" if inference else "cpu"
     with torch.device(device):
-        model = GATPPO(
-            gat_hidden=cfg.gat_hidden_dim,
-            actor_hidden=cfg.actor_hidden_dim,
-            critic_hidden=cfg.critic_hidden_dim,
-            use_gat=model_type != "ppo",
-        )
-        if checkpoint is not None:
+        model = GATPPO.from_config(cfg, model_type)
+        if model.dag_mode != cfg.enable_dag_mode:
+            raise ValueError(f"{model_type} 与环境的 observation_version / enable_dag_mode 不匹配")
+        if checkpoint is not None and not model.dag_mode:
             state = checkpoint["model"]
             key = "gat.layer1.attention.weight"
             edge_dim = state[key].shape[1] - 2 * cfg.gat_hidden_dim
@@ -82,8 +95,28 @@ def build_model(cfg, model_type, checkpoint=None, *, inference=False):
                 )
             if "gat.skip.weight" not in state:
                 model.gat.layer1.norm = model.gat.layer2.norm = model.gat.skip = None
-            model.load_state_dict(state, assign=inference)
+        if checkpoint is not None:
+            model.load_state_dict(checkpoint["model"], assign=inference)
     return model.eval() if inference else model
+
+
+def load_model_for_environment(path, cfg, method):
+    checkpoint = load_checkpoint(path)
+    saved = checkpoint_config(checkpoint)
+    model_type = MODEL_NAMES[checkpoint["model_type"]]
+    legacy_adapter = (saved.observation_version in ("v2_global9", "v3_slot_arrivals_carryover")
+                      and cfg.observation_version == Config.observation_version)
+    if (saved.enable_dag_mode != cfg.enable_dag_mode
+            or (saved.observation_version != cfg.observation_version and not legacy_adapter)):
+        raise ValueError(
+            f"checkpoint observation_version={saved.observation_version!r}, "
+            f"enable_dag_mode={saved.enable_dag_mode} 与目标环境 "
+            f"observation_version={cfg.observation_version!r}, "
+            f"enable_dag_mode={cfg.enable_dag_mode} 不匹配"
+        )
+    if method != "checkpoint" and MODEL_NAMES[method] != model_type:
+        raise ValueError(f"{method} 策略与 checkpoint 的模型类型 {model_type} 不匹配")
+    return build_model(saved, model_type, checkpoint, inference=True), model_type
 
 
 def node_label(env, node):
@@ -135,6 +168,34 @@ def node_snapshot(env, node, active_task_ids):
     }
 
 
+def dag_node_snapshot(env, node, tier, active_task_ids):
+    pool = env.resources
+    return {
+        "id": node,
+        "label": node_label(env, node),
+        "kind": "cloud" if node == env.cloud else "edge",
+        "position": env.node_positions[node].tolist(),
+        "profile": "cloud" if node == env.cloud else RESOURCE_NAMES[int(pool.speed[node].argmax())],
+        "tier": tier,
+        "speed": pool.speed[node].tolist(),
+        "resource_used": pool.compute_used[node].tolist(),
+        "compute_free": pool.free_compute[node].tolist(),
+        "mem_used": float(pool.capacity["ram_gb"][node] - pool.free["ram_gb"][node]),
+        "mem_cap": float(pool.capacity["ram_gb"][node]),
+        "storage_used": float(pool.capacity["storage_gb"][node] - pool.free["storage_gb"][node]),
+        "storage_cap": float(pool.capacity["storage_gb"][node]),
+        "queue_used": int(pool.queues[node].sum()),
+        "queue_cap": int(pool.queue_cap[node]),
+        "services": np.flatnonzero(env.z_service[node]).tolist(),
+        "active_task_ids": active_task_ids,
+        "npu_resident_op": int(pool.resident_op[node, NPU]),
+        "fpga_resident_op": int(pool.resident_op[node, FPGA]),
+        **{f"{key}_{suffix}": float(values[key][node])
+           for key in DEMAND_FIELDS
+           for suffix, values in (("cap", pool.capacity), ("free", pool.free))},
+    }
+
+
 def link_snapshot(env, source, target, status):
     return {
         "source": source,
@@ -162,8 +223,94 @@ def task_fields(task, index):
     return {**fields, "task_index": index, "kind_name": TASK_KIND_NAMES[task.kind]}
 
 
-def serialize_env_snapshot(env, history, last_decision=None):
-    done = env.idx == len(env.tasks)
+def dag_task_fields(env):
+    dag, subtask = env.current_dag, env.current_subtask
+    return {
+        **asdict(subtask),
+        "task_index": env.idx,
+        "slot": env.slot,
+        "source": dag.source,
+        "access_edge": dag.access_edge,
+        "kind": dag.kind,
+        "kind_name": TASK_KIND_NAMES[dag.kind],
+        "data_mb": dag.input_data_mb,
+        "output_mb": dag.output_mb,
+        "deadline_s": dag.deadline_s,
+        "priority": dag.priority,
+    }
+
+
+def dag_status(state, slot):
+    if state.terminal_time is not None:
+        return "completed" if state.success else "failed"
+    return "active" if state.dag.slot <= slot else "waiting"
+
+
+def dag_trace_record(env, record):
+    state = env.dag_states[record["dag_id"]]
+    subtask_id = record["subtask_id"]
+    status = state.status[subtask_id]
+    assignment = state.assignments.get(subtask_id)
+    if assignment is not None:
+        action = assignment.action
+        record = {
+            **record,
+            **action_fields(env, action),
+            "start_time_s": float(action.start_time_s),
+            "finish_time_s": float(action.finish_time_s),
+            "finish_time": float(action.finish_time_s),
+            "setup_delay_s": float(action.setup_delay_s),
+            "setup_energy_j": float(action.setup_energy_j),
+            "comm_tier": action.comm_tier,
+            "flows": [{"pred_id": flow.pred_id, "path": list(flow.path),
+                       "comm_tier": flow.comm_tier, "data_mb": float(flow.data_mb)}
+                      for flow in action.flows],
+        }
+    return {**record, "status": status if assignment is not None else "rejected",
+            "completed": status == "completed", "dag_status": dag_status(state, env.slot)}
+
+
+def dag_snapshot_fields(env, history, done):
+    current_task = None
+    if not done:
+        state = env.dag_states[env.current_dag.dag_id]
+        current_task = {
+            **dag_task_fields(env),
+            "subtasks": [{**asdict(task), "status": state.status[task.subtask_id]}
+                         for task in state.dag.subtasks],
+            "edges": [{"src": u, "dst": v, "data_mb": float(mb)}
+                      for (u, v), mb in state.dag.edge_data_mb.items()],
+            "feasible_action_count": int(env.action_mask[:-1].sum()),
+            "candidates": [
+                {"action_id": i, "valid": bool(valid), **action_fields(env, action)}
+                for i, (action, valid) in enumerate(zip(env.actions, env.action_mask))
+            ],
+        }
+
+    active_task_ids = [[] for _ in range(env.n_graph_nodes)]
+    for record in history:
+        key = (record["dag_id"], record["subtask_id"])
+        if key in env.active_reservations:
+            active_task_ids[env.active_reservations[key].node].append(record["task_index"])
+    return {
+        "enable_dag_mode": True,
+        "observation_version": env.cfg.observation_version,
+        "reward_version": env.cfg.reward_version,
+        "total_tasks": sum(len(dag.subtasks) for dag in env.dags),
+        "nodes": [dag_node_snapshot(env, node, tier, active_task_ids[node])
+                  for node, tier in enumerate((*node_tier_roles(env.cloud), "cloud"))],
+        "current_task": current_task,
+        "recent_tasks": [dag_trace_record(env, record) for record in history],
+        "metrics": env.metrics(),
+        "dags": [
+            {"dag_id": state.dag.dag_id, "status": dag_status(state, env.slot),
+             "finish_time_s": state.terminal_time}
+            for state in env.dag_states.values()
+        ],
+    }
+
+
+def legacy_snapshot_fields(env, history, done):
     current_task = None
     if not done:
         current_task = {
@@ -178,13 +325,6 @@ def serialize_env_snapshot(env, history, last_decision=None):
     active_task_ids = [[] for _ in range(env.n_graph_nodes)]
     for assignment in env.active_assignments:
         active_task_ids[assignment.action.destination].append(assignment.task_index)
-
-    links = [
-        link_snapshot(env, int(source), int(target), "active")
-        for source, target in zip(*np.nonzero(np.triu(env.adj, k=1)))
-    ]
-    links.extend(link_snapshot(env, source, target, "flapped")
-                 for source, target in env.flapped_edges)
 
     # 同一时隙的后续分配可以更新已接收任务的算力、时延和能耗。
     assignments = {assignment.task_index: assignment for assignment in env.assignments}
@@ -209,14 +349,30 @@ def serialize_env_snapshot(env, history, last_decision=None):
     metrics["tasks"] = env.idx
 
     return {
+        "total_tasks": len(env.tasks),
+        "nodes": [node_snapshot(env, node, active_task_ids[node])
+                  for node in range(env.n_graph_nodes)],
+        "current_task": current_task,
+        "recent_tasks": recent_tasks,
+        "metrics": metrics,
+    }
+
+
+def serialize_env_snapshot(env, history, last_decision=None, *, done=False):
+    snapshot_fields = dag_snapshot_fields if env.cfg.enable_dag_mode else legacy_snapshot_fields
+    links = [
+        link_snapshot(env, int(source), int(target), "active")
+        for source, target in zip(*np.nonzero(np.triu(env.adj, k=1)))
+    ]
+    links.extend(link_snapshot(env, source, target, "flapped")
+                 for source, target in env.flapped_edges)
+    return {
         "slot": env.slot,
         "episode_slots": env.cfg.episode_slots,
         "task_index": env.idx,
-        "total_tasks": len(env.tasks),
         "done": done,
         "topology_period_slots": env.cfg.topology_period_slots,
-        "nodes": [node_snapshot(env, node, active_task_ids[node])
-                  for node in range(env.n_graph_nodes)],
+        **snapshot_fields(env, history, done),
         "terminals": [
             {"id": terminal, "label": f"端侧 {terminal}",
              "access_edge": int(env.access_edges[terminal]),
@@ -225,9 +381,6 @@ def serialize_env_snapshot(env, history, last_decision=None):
             for terminal, rate in enumerate(env.radio_rates)
         ],
         "links": links,
-        "current_task": current_task,
-        "recent_tasks": recent_tasks,
-        "metrics": metrics,
         "last_decision": last_decision,
     }
 
@@ -237,7 +390,7 @@ class SimSession:
     env: EdgeEnv
     policy: str
     model: GATPPO | None = None
-    model_type: str | None = None
+    done: bool = False
     history: list = field(default_factory=list)
     last_decision: dict | None = None
     suspended_links: dict = field(default_factory=dict)
@@ -248,34 +401,37 @@ class SimSession:
 
     def reset_policy(self):
         self.rng = np.random.default_rng(self.env.cfg.seed)
-        wrapped = model_environment(self.env, self.model_type, self.env.cfg.seed)
-        self.permutation = wrapped.permutation if isinstance(wrapped, ShuffledGraphEnv) else None
+        self.policy_env = (self.model.rollout_environment(self.env, self.env.cfg.seed)
+                           if self.model is not None else self.env)
 
     def snapshot(self):
-        return serialize_env_snapshot(self.env, self.history, self.last_decision)
+        return serialize_env_snapshot(self.env, self.history, self.last_decision, done=self.done)
 
     def choose_action(self):
-        if self.policy == "shortest_fastest":
-            return shortest_fastest_action(self.env.actions)
-        if self.policy == "greedy_estimate":
-            return greedy_estimate_action(self.env.actions, self.env.cfg)
-        if self.policy == "random":
+        if self.policy == "random" and not self.env.cfg.enable_dag_mode:
             return int(self.rng.integers(len(self.env.actions)))
+        if self.model is None:
+            return baseline_action(self.policy, self.env)
         obs = self.env.observe()
-        if self.permutation is not None:
-            obs = shuffle_graph_observation(obs, self.permutation)
+        if isinstance(self.policy_env, ShuffledGraphEnv):
+            obs = shuffle_graph_observation(obs, self.policy_env.permutation)
+            if isinstance(self.policy_env, DAGShuffledGraphEnv):
+                obs = self.policy_env._align_nodes(obs)
         return self.model.act(obs, greedy=True)[0]
 
     def step(self, action_id=None):
         env = self.env
-        if env.idx == len(env.tasks):
+        if self.done:
+            return
+        if env.cfg.enable_dag_mode:
+            self.step_dag(action_id)
             return
         index = env.idx
         task = env.tasks[index]
         if action_id is None:
             action_id = self.choose_action()
         rejection = env.actions[-1]
-        _, reward, _, info = env.step(action_id)
+        _, reward, self.done, info = env.step(action_id)
         if task.slot // env.cfg.topology_period_slots != env.slot // env.cfg.topology_period_slots:
             self.suspended_links.clear()
         action = env.assignments[-1].action if info["accepted"] else rejection
@@ -296,20 +452,51 @@ class SimSession:
             "destination": info["destination"],
         }
 
+    def step_dag(self, action_id):
+        env = self.env
+        task = dag_task_fields(env)
+        if action_id is None:
+            action_id = self.choose_action()
+        reject = env.actions[-1]
+        _, reward, self.done, info = env.step(action_id)
+        if task["slot"] // env.cfg.topology_period_slots != env.slot // env.cfg.topology_period_slots:
+            self.suspended_links.clear()
+        action = env.assignments[-1].action if info["accepted"] else reject
+        self.history.append({
+            **task,
+            **action_fields(env, action),
+            "accepted": info["accepted"],
+            "reward": reward,
+            "start_time_s": None,
+            "finish_time_s": None,
+            "finish_time": None,
+            "setup_delay_s": 0.0,
+            "setup_energy_j": 0.0,
+            "comm_tier": None,
+            "flows": [],
+        })
+        self.last_decision = {
+            "action_id": action_id,
+            "dag_id": task["dag_id"],
+            "subtask_id": task["subtask_id"],
+            "path": list(info["path"]),
+            "source": task["source"],
+            "access_edge": task["access_edge"],
+            "destination": info["destination"],
+        }
+
 
 class SimManager:
     def __init__(self):
         self.sessions = {}
 
     def create_session(self, cfg, policy="shortest_fastest", checkpoint_path=None):
-        env = EdgeEnv(cfg)
         model = None
-        model_type = None
-        if policy == "checkpoint":
-            checkpoint = load_checkpoint(checkpoint_path)
-            model_type = checkpoint["model_type"]
-            model = build_model(checkpoint_config(checkpoint), model_type, checkpoint, inference=True)
-        session = SimSession(env, policy, model, model_type)
+        if policy == "checkpoint" or policy in MODEL_NAMES:
+            model, _ = load_model_for_environment(checkpoint_path, cfg, policy)
+        if policy == "heft_hetero" and not cfg.enable_dag_mode:
+            raise ValueError("heft_hetero 需要启用 enable_dag_mode")
+        session = SimSession(EdgeEnv(cfg), policy, model)
         session_id = uuid4().hex
         self.sessions[session_id] = session
         return session_id, session.snapshot()
@@ -330,7 +517,7 @@ class SimManager:
         with session.lock:
             env = session.env
             current_slot = env.slot
-            while env.idx < len(env.tasks) and env.slot == current_slot:
+            while env.slot == current_slot and not session.done:
                 session.step()
             return session.snapshot()
 
@@ -384,7 +571,7 @@ class SimManager:
                     if value is not None:
                         env.congestion_delta[start, end] = value - env.background[start, end]
                         env.background[start, end] = value
-            if env.idx < len(env.tasks):
+            if not session.done:
                 env.observe()
             return session.snapshot()
 
@@ -392,6 +579,7 @@ class SimManager:
         session = self.sessions[session_id]
         with session.lock:
             session.env = EdgeEnv(session.env.cfg)
+            session.done = False
             session.history.clear()
             session.suspended_links.clear()
             session.last_decision = None

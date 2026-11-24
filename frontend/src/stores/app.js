@@ -18,7 +18,7 @@ export const useAppStore = defineStore('app', () => {
   const dispatchEnv = computed(() => {
     const scene = presets.value[dispatchScenario.value]
     if (!scene) return null
-    const nodes = env.value.config
+    const nodes = scene.enable_dag_mode ? {} : env.value.config
     const nodeConfig = Object.fromEntries(nodeConfigKeys.filter(key => key in nodes).map(key => [key, nodes[key]]))
     return { preset_name: dispatchScenario.value, config: { ...scene, ...nodeConfig }, seed: scene.seed }
   })
@@ -36,7 +36,7 @@ export const useAppStore = defineStore('app', () => {
   if (train.value.model_type === 'gat') train.value.model_type = 'gatppo'
   if (train.value.model_type === 'flat') train.value.model_type = 'ppo'
   watch(env, v => storage.set('env', v), { deep: true }); watch(train, v => storage.set('train', v), { deep: true }); watch(activeRun, v => storage.set('run', v)); watch(prefs, v => storage.set('prefs', v), { deep: true })
-  async function loadPresets() { const data = await api.get('/env/presets'); presets.value = data.presets; if (!env.value) env.value = { preset_name: 'default', config: structuredClone(data.presets.default) } }
+  async function loadPresets() { const data = await api.get('/env/presets', { params: { include_dag: true } }); presets.value = data.presets; if (!env.value) env.value = { preset_name: 'default', config: structuredClone(data.presets.default) } }
   async function loadCheckpoints() { checkpoints.value = await api.get('/training/checkpoints') }
   async function checkHealth() { try { health.value = await api.get('/health') } catch { health.value = null } }
   function resetEnv() { env.value = { preset_name: 'default', config: structuredClone(toRaw(presets.value.default)) } }

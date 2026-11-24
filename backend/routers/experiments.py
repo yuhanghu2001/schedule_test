@@ -1,42 +1,42 @@
 from dataclasses import replace
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.baselines import evaluate_heuristic
 from src.environment import EdgeEnv
-from src.evaluation import EVALUATION_METRICS, evaluate_episode
+from src.evaluation import DAG_EVALUATION_METRICS, EVALUATION_METRICS, evaluate_episode, summarize_metrics
+from src.models.policy import MODEL_NAMES
 
 from ..db import EnvConfig, EvaluationRecord, get_db, row_dict
 from ..schemas import EvaluationCreate
-from ..services.sim_service import build_model, checkpoint_config, load_checkpoint, request_config
+from ..services.sim_service import load_model_for_environment, request_config
 
 router = APIRouter(prefix="/api/experiments")
 
 
 def evaluate_strategy(strategy, cfg, seeds):
-    checkpoint_path = strategy.checkpoint_path if strategy.method == "checkpoint" else None
-    if strategy.method == "checkpoint":
+    checkpoint_path = None
+    if strategy.method == "checkpoint" or strategy.method in MODEL_NAMES:
+        checkpoint_path = strategy.checkpoint_path
         if checkpoint_path is None:
-            raise HTTPException(422, "checkpoint 策略需要 checkpoint_path")
-        checkpoint = load_checkpoint(checkpoint_path)
-        model_type = checkpoint["model_type"]
-        model = build_model(checkpoint_config(checkpoint), model_type, checkpoint, inference=True)
+            raise HTTPException(422, f"{strategy.method} 策略需要 checkpoint_path")
+        model, model_type = load_model_for_environment(checkpoint_path, cfg, strategy.method)
         runs = [{"seed": seed, **evaluate_episode(model, cfg, seed, model_type)} for seed in seeds]
     else:
+        if strategy.method == "heft_hetero" and not cfg.enable_dag_mode:
+            raise HTTPException(422, "heft_hetero 需要启用 enable_dag_mode")
         runs = [
             {"seed": seed,
              **evaluate_heuristic(EdgeEnv(replace(cfg, seed=seed)), strategy.method)}
             for seed in seeds
         ]
 
-    summary = {}
-    for metric in EVALUATION_METRICS:
-        values = [run[metric] for run in runs if run[metric] is not None]
-        summary[f"{metric}_mean"] = float(np.mean(values)) if values else None
-        summary[f"{metric}_std"] = float(np.std(values)) if values else None
+    fields = EVALUATION_METRICS + (DAG_EVALUATION_METRICS if cfg.enable_dag_mode else ())
+    summary = {f"{metric}_{stat}": values[stat]
+               for metric, values in summarize_metrics(runs, fields).items()
+               for stat in ("mean", "std")}
     return {
         "method": strategy.method,
         "name": strategy.name or strategy.method,

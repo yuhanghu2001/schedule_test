@@ -67,3 +67,13 @@ PPO、GAT-PPO 和打乱图观测的 GAT-PPO 在每回合更新前按 V1 方案�
 每轮记录 `policy_loss,value_loss,entropy,normalized_entropy,approx_kl,clip_fraction,explained_variance,grad_norm_preclip,value_mean,return_mean`。训练期间的随机动作曲线不用于选择模型；每25轮在固定验证种子上贪心评估，按 `objective_score` 均值保存 best checkpoint，并始终保存 last checkpoint。checkpoint 记录 `reward_version` 和 `observation_version`。既有原型的观测为三维边特征，负载参考量按旧场景标定。Plan C 实验随 checkpoint 记录 `reward_version="v8_dynamic_bottleneck"` 和 `observation_version="v4_edge_only_4d_edges"`。
 
 PPO-Clip 在采样时保存旧策略的 `log_prob`，并在当前轨迹的5轮更新中固定它作为概率比分母；下一轮轨迹采样时直接使用更新后的策略。因此当前标准 PPO 实现不维护独立的目标策略网络，也不使用 `kappa=0.995` 的软更新；将该系数加入会改变为图中 MPPO 的旧策略网络变体，不再是当前 PPO-Clip 更新口径。
+
+## 5. 异构 DAG 的 v9 奖励与观测
+
+三个 `hetero_dag_*` 预设将 `reward_version` 设为 `v9_hetero_dag`，观测版本为 `v5_dual_graph_dag`。旧 `default/high_congestion/small_smoke` 仍是 v8/v4 路径；不得把 v8 的实测标定值或旧观测结构套用到 DAG 运行。
+
+v9 对 DAG 完成、makespan、能耗和负载分别使用 `reward_beta_completion`、`reward_beta_delay`、`reward_beta_energy`、`reward_beta_load`，默认比例仍为 `2:1:1:1`。每个 DAG 维护可增量结算的完成/时延/能耗分量，按状态变化结算；异构负载项采用配置化 `reward_load_std_ref_v9`，并依据 `load_balance_chip_weights` 汇总 CPU/NPU/FPGA 利用率标准差的变化。v9 不使用 v8 的随机策略负载方差标定常数，本文不报告未经正式运行确认的标定值或训练效果。
+
+不可行动作由观测中的 `action_mask` 屏蔽；环境仍对传入的无效动作施加 `reward_penalty_invalid`。`reward_penalty_incomplete` 惩罚未按期完成的 DAG，`reward_penalty_conditional_reject` 只在仍有可行接收动作时惩罚主动拒绝；没有可行接收动作时拒绝不罚。DAG 模式的策略可行性掩码不改变物理约束或合法拒绝动作。
+
+DAG 网络使用双图观测：`dual_gatppo` 编码网络与任务依赖图，`single_gatppo` 使用当前子任务的平坦特征，`ppo` 使用平坦网络节点编码；`shuffled_gat` 置换网络图观测而保留真实动作及物理约束。以上模型名及版本写入训练配置/checkpoint，DAG 专属指标见实验设计文档。v9 的奖励值不能替代 `dag_completion_rate`、`avg_dag_makespan_s`、能耗和异构负载等独立报告指标。

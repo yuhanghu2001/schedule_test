@@ -39,3 +39,16 @@ class GATEncoder(nn.Module):
         h = self.layer1(nodes, adjacency, edges)
         h = self.layer2(h, adjacency, edges)
         return h + self.skip(nodes) if self.skip is not None else h
+
+
+class DAGGraphEncoder(nn.Module):
+    """对前驱做边特征注意力聚合，返回当前子任务及整张 DAG 的表示。"""
+
+    def __init__(self, node_dim=22, hidden=64):
+        super().__init__()
+        self.layer = GraphAttentionLayer(node_dim, hidden, edge_dim=1)
+
+    def forward(self, nodes, adjacency, edges, dag_node_mask, current_subtask_idx):
+        neighbors = adjacency * (dag_node_mask[:, None] & dag_node_mask[None, :])
+        h = self.layer(nodes, neighbors, edges)
+        return h[current_subtask_idx], h[dag_node_mask].mean(dim=0)

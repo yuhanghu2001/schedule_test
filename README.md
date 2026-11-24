@@ -109,7 +109,13 @@ results/YYYYMMDD_HHMMSS/
 
 训练图含累计奖励、完成率、时延、能耗和负载均衡度；验证图含目标分数、完成率、时延、能耗和负载方差，阴影是同一模型的固定验证种子间标准差。它不表示多次训练种子间置信区间，也不替代独立最终测试。
 
-可用 `--config default/high_congestion/small_smoke`、`--seed`、`--device`、`--threads` 设置参数。单算法续训使用 `--resume 路径 --episodes 总回合数`；`--output` 和 `--resume` 只用于单算法。Ctrl+C 保留已完成回合与 last 权重，双算法模式仅对已有记录绘图，不伪造未运行算法的数据。开发验证必须指定系统临时目录 `--run-dir`，不写入正式 results。
+可用 `--config default/high_congestion/small_smoke`（等价参数名 `--preset`）、`--seed`、`--device`、`--threads` 设置参数。单算法续训使用 `--resume 路径 --episodes 总回合数`；`--output` 和 `--resume` 只用于单算法。Ctrl+C 保留已完成回合与 last 权重，双算法模式仅对已有记录绘图，不伪造未运行算法的数据。开发验证必须指定系统临时目录 `--run-dir`，不写入正式 results。
+
+### 异构 DAG 协同调度
+
+异构 DAG 模式通过 `enable_dag_mode` 开启，使用 `hetero_dag_default`、`hetero_dag_high_congestion`、`hetero_dag_smoke` 三个预设，分别继承传统三个场景的负载与网络参数。每个任务从图像识别、目标检测、视频分析、语音处理、信号计算五类 DAG 模板生成；子任务具备 CPU/NPU/FPGA 兼容性和核数、RAM、显存及 FPGA LUT/FF/BRAM/DSP 需求，并受算子亲和度、芯片层级画像、FPGA 重构、NPU 上下文载入和三级内部通信（同节点同芯 / 同节点跨芯 PCIe/DMA / 跨节点多跳）影响。deadline 根据源端实际无线速率、DAG 最长依赖路径工作量和配置化松弛系数生成。
+
+训练模型为 `dual_gatppo`（网络与任务 DAG 双图编码）、`single_gatppo`（仅网络图 GAT 编码，无 DAG-GAT）、`ppo` 和 `shuffled_gat`。策略使用无效动作掩码。可通过 `--preset hetero_dag_default --model dual_gatppo --episodes 500` 启动；`--preset` 与 `--config` 等效。DAG 评估增加 `dag_completion_rate`、`avg_dag_makespan_s`、`deadline_violation_rate`、`avg_dag_energy_j`、FPGA 重构、CPU/NPU/FPGA 三维负载及通信层级指标；`heft_hetero` 是对应异构 HEFT 启发式基线。相关实现与指标定义见 [环境开发说明](docs/01_环境开发说明书.md#异构-dag-模式enable_dag_modetrue)、[实验设计](docs/03_实验设计与指标.md#异构-dag-升级) 和 [奖励说明](docs/05_训练奖励与ppo对齐说明.md#5-异构-dag-的-v9-奖励与观测)。目前不据此宣称任何未完成的训练效果。
 
 ## 文件概览
 
@@ -140,9 +146,10 @@ schedule_test/
 │   └── src/                          # 训练工作台、推演沙盘、对比实验室、实验档案与拓扑画布
 ├── src/
 │   ├── train.py                      # GAT-PPO/PPO 单算法、双算法对比、续训与绘图入口
-│   ├── config.py                     # 全部参数与三套Python场景配置
-│   ├── tasks.py                      # 任务生成
-│   ├── topology.py                   # 动态连通图与简单路由
+│   ├── config.py                     # 全部参数与传统/DAG 六套 Python 场景配置
+│   ├── tasks.py                      # 传统任务与五类异构 DAG 模板生成
+│   ├── resources.py                  # DAG 模式三维细粒度芯片资源池与预留
+│   ├── topology.py                   # 动态连通图、层级角色与简单路由
 │   ├── continuous.py                 # Dinkelbach 功率与 KKT 算力子问题
 │   ├── baselines.py                  # 最短最快与估计一步奖励贪心基线
 │   ├── environment.py                # 状态、合法动作、更新、统计

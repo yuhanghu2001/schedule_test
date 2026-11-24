@@ -25,6 +25,15 @@ def node_positions(n_edges, n_terminals):
     return np.array(positions + [(900.0, 120.0)]), np.array(terminals)
 
 
+def node_tier_roles(n_edges: int) -> tuple[str, ...]:
+    """按边缘编号返回网格分层，单行网格全部属于网关层。"""
+    positions, _ = node_positions(n_edges, 0)
+    rows = positions[:-1, 1]
+    top, bottom = rows.min(), rows.max()
+    return tuple("gateway" if y == top else "access" if y == bottom else "middle"
+                 for y in rows)
+
+
 def _activate_link(rng, cfg, a, b, adj, base_rates, base_background, prop, forward_power):
     if b == cfg.n_edges:
         rate = rng.uniform(cfg.cloud_rate_min_mbps, cfg.cloud_rate_max_mbps)

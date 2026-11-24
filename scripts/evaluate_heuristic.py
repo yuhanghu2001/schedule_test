@@ -7,9 +7,10 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
-from src.baselines import evaluate_heuristic
 from src.config import load_config
 from src.environment import EdgeEnv
+from src.evaluation import evaluate_heuristic
+from src.train import PRESET_NAMES
 
 
 def new_run_dir():
@@ -18,17 +19,18 @@ def new_run_dir():
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
-                    default="default")
+parser.add_argument("--config", "--preset", choices=PRESET_NAMES, default="default")
 parser.add_argument("--seed", type=int, help="覆盖评估种子")
 parser.add_argument(
-    "--method", choices=("shortest_fastest", "greedy_estimate"),
+    "--method", choices=("shortest_fastest", "greedy_estimate", "greedy", "heft_hetero"),
     default="shortest_fastest",
 )
 parser.add_argument("--run-dir", help="评估配置和指标目录；默认创建北京时间结果目录")
 args = parser.parse_args()
 
 cfg = load_config(args.config)
+if args.method == "heft_hetero" and not cfg.enable_dag_mode:
+    parser.error("heft_hetero 需要异构 DAG 预设")
 evaluation_seed = args.seed if args.seed is not None else cfg.evaluation_seed
 eval_cfg = replace(cfg, seed=evaluation_seed)
 np.random.seed(evaluation_seed)

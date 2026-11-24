@@ -7,10 +7,10 @@ import subprocess
 import sys
 from zoneinfo import ZoneInfo
 
-import numpy as np
-
 from src.config import load_config
-from src.models.policy import MODEL_NAMES
+from src.evaluation import DAG_EVALUATION_METRICS, summarize_metrics
+from src.plotting import save_method_bar_plot
+from src.train import PRESET_NAMES, TRAIN_MODEL_NAMES, require_observation_version
 
 
 METRICS = (
@@ -27,6 +27,10 @@ METRICS = (
     "mean_hops_accepted",
     "mean_path_length",
 )
+HEURISTICS = {
+    "heuristic": "shortest_fastest", "shortest_fastest": "shortest_fastest",
+    "greedy_estimate": "greedy_estimate", "greedy": "greedy", "heft_hetero": "heft_hetero",
+}
 
 
 def new_run_dir():
@@ -35,27 +39,32 @@ def new_run_dir():
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
-                    default="default")
+parser.add_argument("--config", "--preset", choices=PRESET_NAMES, default="default")
 parser.add_argument("--evaluation-config",
-                    choices=("default", "high_congestion", "small_smoke"),
+                    choices=PRESET_NAMES,
                     help="评估场景配置；默认与训练配置相同")
 parser.add_argument("--episodes", type=int, default=100)
 parser.add_argument("--seeds", nargs="+", type=int, default=list(range(10)))
 parser.add_argument(
     "--methods", nargs="+",
-    choices=("gatppo", "ppo", "shuffled_gat", "heuristic", "gat", "flat"),
-    default=("gatppo", "ppo", "shuffled_gat", "heuristic"),
+    choices=(*TRAIN_MODEL_NAMES, *HEURISTICS),
 )
 parser.add_argument("--run-dir", help="组合实验目录；默认创建北京时间结果目录")
 parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
 parser.add_argument("--threads", type=int, default=4)
 args = parser.parse_args()
-args.methods = [MODEL_NAMES[method] if method != "heuristic" else method for method in args.methods]
-
 cfg = load_config(args.config)
 evaluation_config_source = args.evaluation_config or args.config
 evaluation_cfg = load_config(evaluation_config_source)
+default_methods = ("gatppo", "ppo", "shuffled_gat", "heuristic")
+if cfg.enable_dag_mode:
+    default_methods = ("dual_gatppo", "single_gatppo", "ppo", "shuffled_gat", "heft_hetero", "greedy")
+methods = list(dict.fromkeys(TRAIN_MODEL_NAMES.get(method, method)
+                             for method in (args.methods or default_methods)))
+if any(method in TRAIN_MODEL_NAMES for method in methods):
+    require_observation_version(cfg.observation_version, evaluation_cfg.observation_version)
+if "heft_hetero" in methods and not evaluation_cfg.enable_dag_mode:
+    parser.error("heft_hetero 需要异构 DAG 评估预设")
 run_dir = Path(args.run_dir) if args.run_dir else new_run_dir()
 run_dir.mkdir(parents=True, exist_ok=bool(args.run_dir))
 
@@ -66,22 +75,23 @@ experiment_config = {
     "evaluation_config_source": evaluation_config_source,
     "episodes": args.episodes,
     "seeds": args.seeds,
-    "methods": args.methods,
+    "methods": methods,
     "device": args.device,
     "torch_threads": args.threads,
 }
 with open(run_dir / "experiment_config.json", "x", encoding="utf-8") as file:
     json.dump(experiment_config, file, ensure_ascii=False, indent=2)
 
-method_metrics = {method: [] for method in args.methods}
-for method in args.methods:
+method_metrics = {method: [] for method in methods}
+for method in methods:
     for seed in args.seeds:
         seed_dir = run_dir / method / f"seed_{seed}"
         evaluation_seed = evaluation_cfg.evaluation_seed + seed
-        if method == "heuristic":
+        if method in HEURISTICS:
             command = [
                 sys.executable, "-m", "scripts.evaluate_heuristic",
                 "--config", evaluation_config_source,
+                "--method", HEURISTICS[method],
                 "--seed", str(evaluation_seed),
                 "--run-dir", str(seed_dir),
             ]
@@ -110,17 +120,15 @@ for method in args.methods:
         with open(seed_dir / "metrics.json", encoding="utf-8") as file:
             method_metrics[method].append(json.load(file))
 
-summary = {}
-for method, runs in method_metrics.items():
-    summary[method] = {}
-    for metric in METRICS:
-        values = [run[metric] for run in runs if run[metric] is not None]
-        summary[method][metric] = {
-            "mean": float(np.mean(values)) if values else None,
-            "std": float(np.std(values)) if values else None,
-            "count": len(values),
-        }
+fields = METRICS + (DAG_EVALUATION_METRICS if evaluation_cfg.enable_dag_mode else ())
+summary = {method: summarize_metrics(runs, fields) for method, runs in method_metrics.items()}
 
 with open(run_dir / "summary.json", "x", encoding="utf-8") as file:
     json.dump(summary, file, ensure_ascii=False, indent=2)
+if evaluation_cfg.enable_dag_mode:
+    save_method_bar_plot({
+        method: {f"{field}_{stat}": values[stat] for field, values in metrics.items()
+                 for stat in ("mean", "std")}
+        for method, metrics in summary.items()
+    }, run_dir / "method_metrics_bar.png")
 print(json.dumps(summary, ensure_ascii=False, indent=2))

@@ -3,7 +3,9 @@ from dataclasses import replace
 
 import numpy as np
 
+from .baselines import evaluate_heuristic as evaluate_heuristic
 from .environment import EdgeEnv, model_environment
+from .models.policy import GATPPO
 
 
 EVALUATION_METRICS = (
@@ -27,9 +29,45 @@ EVALUATION_METRICS = (
     "mean_path_length",
 )
 
+DAG_EVALUATION_METRICS = (
+    "dag_completion_rate",
+    "avg_dag_makespan_s",
+    "deadline_violation_rate",
+    "avg_dag_energy_j",
+    "fpga_reconfig_rate",
+    "fpga_reconfig_delay_ratio",
+    "cpu_load_std",
+    "npu_load_std",
+    "fpga_load_std",
+    "hetero_load_balance_degree",
+    "comm_tier0_ratio",
+    "comm_tier1_ratio",
+    "comm_tier2_ratio",
+)
+
+
+def summarize_metrics(runs, fields=None):
+    if fields is None:
+        fields = tuple(field for field in (*EVALUATION_METRICS, *DAG_EVALUATION_METRICS)
+                       if field in runs[0])
+    summary = {}
+    for field in fields:
+        values = [run[field] for run in runs if run[field] is not None and np.isfinite(run[field])]
+        summary[field] = {
+            "mean": float(np.mean(values)) if values else None,
+            "std": float(np.std(values)) if values else None,
+            "count": len(values),
+        }
+    return summary
+
 
 def evaluate_episode(model, cfg, seed, model_type):
+    if isinstance(model, GATPPO) and model.dag_mode != cfg.enable_dag_mode:
+        expected = "v5 DAG" if model.dag_mode else "v4"
+        raise ValueError(f"Incompatible observation_version: model expects {expected}, got {cfg.observation_version!r}")
     env = model_environment(EdgeEnv(replace(cfg, seed=seed)), model_type, seed)
+    if isinstance(model, GATPPO) and model.dag_mode:
+        env = model.rollout_environment(env, seed)
     obs = env.reset()
     done = False
     while not done:
@@ -39,14 +77,15 @@ def evaluate_episode(model, cfg, seed, model_type):
 
 
 def evaluate_policy(model, cfg, seeds, model_type):
+    seeds = list(seeds)
     was_training = model.training
     model.eval()
     runs = [evaluate_episode(model, cfg, seed, model_type) for seed in seeds]
     if was_training:
         model.train()
-    summary = {"evaluation_seeds": list(seeds)}
-    for field in EVALUATION_METRICS:
-        values = [run[field] for run in runs if run[field] is not None]
-        summary[f"{field}_mean"] = float(np.mean(values)) if values else None
-        summary[f"{field}_std"] = float(np.std(values)) if values else None
-    return summary
+    fields = EVALUATION_METRICS + (DAG_EVALUATION_METRICS if cfg.enable_dag_mode else ())
+    return {"evaluation_seeds": seeds, **{
+        f"{field}_{stat}": values[stat]
+        for field, values in summarize_metrics(runs, fields).items()
+        for stat in ("mean", "std")
+    }}

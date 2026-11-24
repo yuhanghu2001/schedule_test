@@ -8,10 +8,20 @@ const metrics = [
   { key: 'avg_delay_s', name: '平均完成时延', unit: 's', factor: 1, digits: 3 },
   { key: 'avg_energy_j', name: '平均任务能耗', unit: 'J', factor: 1, digits: 3 },
   { key: 'load_balance_degree', name: '负载均衡度', unit: '', factor: 1, digits: 3 },
+  { key: 'avg_dag_makespan_s', name: 'DAG Makespan', unit: 's', factor: 1, digits: 3, direction: -1 },
+  { key: 'cpu_load_std', name: 'CPU 负载标准差', unit: '', factor: 1, digits: 3, direction: -1 },
+  { key: 'npu_load_std', name: 'NPU 负载标准差', unit: '', factor: 1, digits: 3, direction: -1 },
+  { key: 'fpga_load_std', name: 'FPGA 负载标准差', unit: '', factor: 1, digits: 3, direction: -1 },
+  { key: 'fpga_reconfig_rate', name: 'FPGA 重构率', unit: '%', factor: 100, digits: 2, direction: -1 },
 ]
 const rewardMetric = { key: 'episode_reward', unit: '', factor: 1, digits: 2 }
 const models = {
   gatppo: ['GAT-PPO', '#52c7ff'],
+  dual_gatppo: ['双图 GAT-PPO', '#008cff'],
+  single_gatppo: ['单图 GAT-PPO', '#51dfb3'],
+  dqn: ['DQN', '#52c7ff'],
+  ddpg: ['DDPG', '#51dfb3'],
+  heft_hetero: ['异构 HEFT', '#52c7ff'],
   ppo: ['PPO', '#51dfb3'],
   shuffled_gat: ['GAT-PPO（图打乱）', '#ffbd63'],
 }
@@ -93,7 +103,7 @@ onMounted(async () => {
     for (const run of runs) {
       const id = run.run_id.split('/')[0]
       if (!grouped.has(id)) grouped.set(id, { id, runs: [] })
-      const [name, color] = models[aliases[run.model_type] ?? run.model_type]
+      const [name, color] = models[aliases[run.model_type] ?? run.model_type] ?? [run.model_type, '#52c7ff']
       grouped.get(id).runs.push({ ...run, name, color })
     }
     batches.value = [...grouped.values()].sort((a, b) => b.id.localeCompare(a.id))

@@ -10,6 +10,16 @@ const metrics = [
   { key: 'avg_delay_s', name: '平均完成时延', unit: 's', factor: 1, digits: 2, direction: -1 },
   { key: 'avg_energy_j', name: '平均任务能耗', unit: 'J', factor: 1, digits: 2, direction: -1 },
   { key: 'load_balance_degree', name: '负载均衡度', unit: '', factor: 1, digits: 3, direction: 1 },
+  { key: 'avg_dag_makespan_s', name: 'DAG Makespan', unit: 's', factor: 1, digits: 3, direction: -1 },
+  { key: 'cpu_load_std', name: 'CPU 负载标准差', unit: '', factor: 1, digits: 3, direction: -1 },
+  { key: 'npu_load_std', name: 'NPU 负载标准差', unit: '', factor: 1, digits: 3, direction: -1 },
+  { key: 'fpga_load_std', name: 'FPGA 负载标准差', unit: '', factor: 1, digits: 3, direction: -1 },
+  { key: 'fpga_reconfig_rate', name: 'FPGA 重构率', unit: '%', factor: 100, digits: 2, direction: -1 },
+]
+const radarMetrics = [
+  metrics[0],
+  { key: 'acceptance_rate', name: '任务接收率', factor: 100, direction: 1 },
+  ...metrics.slice(1, 4),
 ]
 const selected = ref(algorithms.map(item => item.id))
 const selectedMetrics = ref(metrics.map(item => item.key))
@@ -29,9 +39,13 @@ const taskCount = computed(() => runs.value.length ? completed.value[runs.value[
 const value = (row, metric) => row[metric.key] == null ? null : row[metric.key] * metric.factor
 const number = (amount, digits) => amount == null ? '—' : amount.toFixed(digits)
 const text = (row, metric) => number(value(row, metric), metric.digits)
-const performance = computed(() => activeMetrics.value.map(metric => {
+const radarPerformance = computed(() => radarMetrics.map(metric => {
   const ranked = rows.value.filter(row => row.last[metric.key] != null)
     .sort((a, b) => metric.direction * (b.last[metric.key] - a.last[metric.key]))
+  return { ...metric, best: ranked[0], worst: ranked.at(-1) }
+}))
+const performance = computed(() => activeMetrics.value.map(metric => {
+  const ranked = rows.value.filter(row => row.last[metric.key] != null).sort((a, b) => metric.direction * (b.last[metric.key] - a.last[metric.key]))
   return { ...metric, best: ranked[0], worst: ranked.at(-1) }
 }))
 
@@ -52,7 +66,7 @@ function normalized(row, metric) {
   const worst = value(metric.worst.last, metric)
   return best === worst ? 1 : (value(row.last, metric) - worst) / (best - worst)
 }
-const radarRows = computed(() => rows.value.filter(row => activeMetrics.value.every(metric => row.last[metric.key] != null)))
+const radarRows = computed(() => rows.value.filter(row => radarMetrics.every(metric => row.last[metric.key] != null)))
 const chartText = '#b8d2eb'
 const chartBase = {
   animation: false,
@@ -62,12 +76,12 @@ const radar = computed(() => ({
   ...chartBase,
   tooltip: {
     ...chartBase.tooltip,
-    formatter: point => [point.name, ...performance.value.map((metric, index) =>
+    formatter: point => [point.name, ...radarMetrics.map((metric, index) =>
       `${metric.name}　${number(point.value[index], 2)}`)].join('<br>'),
   },
   radar: {
-    center: ['50%', '52%'], radius: '68%', splitNumber: 5,
-    indicator: activeMetrics.value.map(metric => ({ name: metric.name, max: 1 })),
+    center: ['50%', '52%'], radius: '68%', shape: 'polygon', splitNumber: 5,
+    indicator: radarMetrics.map(metric => ({ name: metric.name, max: 1 })),
     axisName: { color: chartText, fontSize: 12 },
     splitArea: { areaStyle: { color: ['#061b34', '#092a4c'] } },
     splitLine: { lineStyle: { color: '#28638f' } },
@@ -76,7 +90,7 @@ const radar = computed(() => ({
   series: [{
     type: 'radar', symbol: 'none',
     data: radarRows.value.map(row => ({
-      name: row.name, value: performance.value.map(metric => normalized(row, metric)),
+      name: row.name, value: radarPerformance.value.map(metric => normalized(row, metric)),
       lineStyle: { color: row.color, width: 2 },
       areaStyle: { color: row.color, opacity: .09 },
       itemStyle: { color: row.color },
@@ -172,10 +186,10 @@ const trend = computed(() => {
           <p v-else class="dispatch-empty">{{ runs.length ? '当前筛选条件下没有调度记录。' : '请先在系统总览完成一次推演。' }}</p>
         </section>
         <section class="monitor-panel">
-          <h2 class="monitor-title">综合性能对比<small>归一化，越高越好</small></h2>
-          <TrainingLogChart v-if="activeMetrics.length >= 3 && radarRows.length" :option="radar" label="各算法归一化指标雷达图" />
-          <p v-else class="dispatch-empty">{{ activeMetrics.length < 3 ? '选择至少三项指标可查看雷达图。' : '有完整指标后显示雷达图。' }}</p>
-          <div v-if="activeMetrics.length >= 3 && radarRows.length" class="dispatch-legend">
+          <h2 class="monitor-title">综合性能对比（归一化）</h2>
+          <TrainingLogChart v-if="radarRows.length" :option="radar" label="各算法五维归一化雷达图" />
+          <p v-else class="dispatch-empty">有完整指标后显示雷达图。</p>
+          <div v-if="radarRows.length" class="dispatch-legend">
             <span v-for="row in radarRows" :key="row.id" :style="{ color: row.color }">{{ row.name }}</span>
           </div>
         </section>

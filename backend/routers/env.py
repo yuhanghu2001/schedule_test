@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from typing import get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
@@ -6,9 +7,10 @@ from sqlalchemy.orm import Session
 
 from src.config import load_config
 from src.environment import EdgeEnv
+from src.models.policy import MODEL_NAMES
 
 from ..db import EnvConfig, get_db, row_dict
-from ..schemas import EnvConfigCreate, EnvRequest, LinkPerturbation
+from ..schemas import EnvConfigCreate, EnvRequest, LegacyPreset, LinkPerturbation, Preset
 from ..schemas import SimCreate, SimCreatedResponse, SimStep
 from ..services.sim_service import (
     RESOURCE_NAMES, TASK_KIND_NAMES, request_config, serialize_env_snapshot,
@@ -18,10 +20,10 @@ router = APIRouter()
 
 
 @router.get("/api/env/presets")
-def env_presets():
+def env_presets(include_dag: bool = False):
     return {
         "presets": {name: asdict(load_config(name))
-                    for name in ("default", "high_congestion", "small_smoke")},
+                    for name in get_args(Preset if include_dag else LegacyPreset)},
         "task_kind_names": TASK_KIND_NAMES,
         "resource_names": RESOURCE_NAMES,
     }
@@ -58,8 +60,8 @@ def preview(body: EnvRequest):
 
 @router.post("/api/sim/sessions", status_code=201, response_model=SimCreatedResponse)
 def create_session(body: SimCreate, request: Request):
-    if body.policy == "checkpoint" and body.checkpoint_path is None:
-        raise HTTPException(422, "checkpoint 策略需要 checkpoint_path")
+    if (body.policy == "checkpoint" or body.policy in MODEL_NAMES) and body.checkpoint_path is None:
+        raise HTTPException(422, f"{body.policy} 策略需要 checkpoint_path")
     session_id, snapshot = request.app.state.sim_manager.create_session(
         request_config(body), body.policy, body.checkpoint_path
     )

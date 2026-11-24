@@ -1,6 +1,9 @@
 from dataclasses import dataclass, replace
 
 
+NODE_TIERS = ("access", "middle", "gateway", "cloud")
+
+
 @dataclass
 class Config:
     # 随机种子与任务规模
@@ -160,9 +163,46 @@ class Config:
     aco_evaporation: float = 0.3
     aco_max_rank: int = 3
 
+    # DAG 仿真基线。每项容量的四列按 NODE_TIERS 排列。
+    enable_dag_mode: bool = False
+    tier_cpu_cores: tuple[int, ...] = (24, 12, 32, 128)
+    tier_ram_gb: tuple[float, ...] = (64., 48., 96., 512.)
+    tier_cpu_gflops: tuple[float, ...] = (420., 180., 640., 8000.)
+    tier_npu_gflops: tuple[float, ...] = (120., 960., 1200., 12000.)
+    tier_npu_vram_gb: tuple[float, ...] = (4., 32., 48., 192.)
+    tier_fpga_gflops: tuple[float, ...] = (720., 240., 320., 8000.)
+    tier_fpga_lut: tuple[int, ...] = (240000, 80000, 120000, 960000)
+    tier_fpga_ff: tuple[int, ...] = (480000, 160000, 240000, 1920000)
+    tier_fpga_bram: tuple[int, ...] = (800, 250, 400, 3200)
+    tier_fpga_dsp: tuple[int, ...] = (1800, 600, 900, 7200)
+
+    # 行按 OP_NAMES 排列，列依次为 CPU、NPU、FPGA。
+    operator_affinity_matrix: tuple[tuple[float, float, float], ...] = (
+        (1.0, 0.0, 0.0), (0.6, 0.0, 1.5), (0.5, 0.0, 1.8),
+        (0.4, 2.0, 0.9), (1.0, 0.0, 0.0),
+    )
+    fpga_reconfig_delay_s: float = 0.02
+    fpga_reconfig_energy_j: float = 0.24
+    npu_context_load_delay_s: float = 0.01
+    npu_context_load_energy_j: float = 0.18
+    pcie_dma_bandwidth_mbps: float = 16000.
+    pcie_dma_base_latency_s: float = 0.00005
+    pcie_dma_energy_per_mb_j: float = 0.002
+    chip_compute_power_w: tuple[float, float, float] = (10., 18., 12.)
+    load_balance_chip_weights: tuple[float, float, float] = (1/3, 1/3, 1/3)
+    reward_load_std_ref_v9: float = 1.0
+
 
 def load_config(name: str = "default") -> Config:
     """返回 Python 场景配置；预设启用八邻接、网关上云和最近邻接入。"""
+    dag_bases = {
+        "hetero_dag_default": "default",
+        "hetero_dag_high_congestion": "high_congestion",
+        "hetero_dag_smoke": "small_smoke",
+    }
+    if name in dag_bases:
+        return replace(load_config(dag_bases[name]), enable_dag_mode=True,
+                       observation_version="v5_dual_graph_dag", reward_version="v9_hetero_dag")
     cfg = replace(Config(), cloud_gateway_count=4, terminal_access_mode="nearest",
                   edge_topology="eight_neighbor", undirected_edge_links=29)
     if name == "default":

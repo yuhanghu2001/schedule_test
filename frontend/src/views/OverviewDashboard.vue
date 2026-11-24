@@ -9,7 +9,7 @@ import TaskFlowTable from '../components/TaskFlowTable.vue'
 import ResourceTrend from '../components/ResourceTrend.vue'
 import NetworkResourcePanel from '../components/NetworkResourcePanel.vue'
 import DispatchScenarioProfile from '../components/DispatchScenarioProfile.vue'
-import { checkpointBatch, dispatchAlgorithms, dispatchCheckpointNames } from '../utils/dispatchAlgorithms'
+import { checkpointBatch, dispatchAlgorithms, dispatchCheckpointNames, checkpointMatches } from '../utils/dispatchAlgorithms'
 import { dispatchScenarios } from '../utils/dispatchScenarios'
 import { linkHealth } from '../utils/linkTelemetry'
 const app = useAppStore(),
@@ -33,7 +33,7 @@ const resources = ['CPU', 'NPU', 'FPGA'],
   taskNames = ['图像识别', '目标检测', '视频分析', '语音处理', '信号计算']
 const modelWeights = computed(() => dispatchCheckpointNames[policy.value])
 const checkpointOptions = computed(() => modelWeights.value
-  ? app.checkpoints.filter(file => modelWeights.value.includes(file.name))
+  ? app.checkpoints.filter(file => modelWeights.value.includes(file.name) && checkpointMatches(file, app.dispatchEnv?.config))
   : [])
 const used = computed(() =>
   resources.map((_, i) =>
@@ -95,6 +95,8 @@ function changeCheckpoint() {
 function selectScenario(event) {
   app.dispatchScenario = event.target.value
   snapshot.value = null
+  checkpoint.value = ''
+  policy.value = ''
   return preview()
 }
 async function loadTasks() {
@@ -229,7 +231,7 @@ onBeforeUnmount(() => {
             @change="changePolicy"
           >
             <el-option
-              v-for="algorithm in dispatchAlgorithms"
+              v-for="algorithm in dispatchAlgorithms.filter(a => app.dispatchEnv?.config.enable_dag_mode ? a.id !== 'gatppo' : !['dual_gatppo', 'single_gatppo', 'heft_hetero'].includes(a.id))"
               :key="algorithm.id"
               :label="algorithm.name"
               :value="algorithm.id"
@@ -414,10 +416,10 @@ onBeforeUnmount(() => {
       align-center
       :show-close="false"
     >
-      <p>本轮推演已完成，可以前往调度日志查看结果。</p>
+      <p>本轮推演已完成，可以前往调度分析查看结果。</p>
       <template #footer>
         <el-button @click="completionDialog = false">留在总览</el-button>
-        <el-button type="primary" @click="openDispatchLogs">查看调度日志</el-button>
+        <el-button type="primary" @click="openDispatchLogs">查看调度分析</el-button>
       </template>
     </el-dialog>
     <el-drawer

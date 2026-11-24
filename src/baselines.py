@@ -5,19 +5,23 @@ from itertools import islice, takewhile
 import numpy as np
 
 
-def shortest_fastest_action(actions):
-    feasible = list(enumerate(actions[:-1]))
-    if not feasible:
-        return len(actions) - 1
+def feasible_indices(actions, action_mask=None):
+    if action_mask is None:  # v4 只枚举可行接收动作
+        return range(len(actions) - 1)
+    return np.flatnonzero(action_mask[:-1]).tolist()
+
+
+def shortest_fastest_action(actions, action_mask=None):
     return min(
-        feasible,
-        key=lambda item: (
-            max(0, len(item[1].path) - 1),
-            -item[1].compute_share,
-            item[1].delay,
-            item[1].energy,
+        feasible_indices(actions, action_mask),
+        key=lambda i: (
+            max(0, len(actions[i].path) - 1),
+            -actions[i].compute_share,
+            actions[i].delay,
+            actions[i].energy,
         ),
-    )[0]
+        default=len(actions) - 1,
+    )
 
 
 def greedy_score(action, cfg):
@@ -28,14 +32,47 @@ def greedy_score(action, cfg):
     )
 
 
-def greedy_estimate_action(actions, cfg):
-    feasible = list(enumerate(actions[:-1]))
-    if not feasible:
-        return len(actions) - 1
-    return max(
-        feasible,
-        key=lambda item: greedy_score(item[1], cfg),
-    )[0]
+def greedy_estimate_action(actions, cfg, action_mask=None):
+    return max(feasible_indices(actions, action_mask), key=lambda i: greedy_score(actions[i], cfg),
+               default=len(actions) - 1)
+
+
+def random_action(env):
+    indices = feasible_indices(env.actions, getattr(env, "action_mask", None))
+    return int(env.rng.choice(indices)) if len(indices) else len(env.actions) - 1
+
+
+def cloud_first_action(env):
+    actions = env.actions
+    return min(feasible_indices(actions, getattr(env, "action_mask", None)),
+               key=lambda i: (actions[i].destination != env.cloud, actions[i].delay, actions[i].energy),
+               default=len(actions) - 1)
+
+
+def heft_hetero_action(env):
+    # 就绪队列已经按 rank_u 排序，delivery_time_s 在非出口处等于 finish_time_s。
+    def eft_key(i):
+        action = env.actions[i]
+        hops = max(0, len(action.path) - 1 - int(env.cloud in action.path))
+        return action.delivery_time_s, action.energy, hops
+
+    return min(feasible_indices(env.actions, env.action_mask), key=eft_key,
+               default=len(env.actions) - 1)
+
+
+def baseline_action(name, env):
+    mask = getattr(env, "action_mask", None)
+    if name == "shortest_fastest":
+        return shortest_fastest_action(env.actions, mask)
+    if name in ("greedy", "greedy_estimate"):
+        return greedy_estimate_action(env.actions, env.cfg, mask)
+    if name == "random":
+        return random_action(env)
+    if name == "cloud_first":
+        return cloud_first_action(env)
+    if name == "heft_hetero":
+        return heft_hetero_action(env)
+    raise ValueError(f"未知启发式基线: {name}")
 
 
 def ranked_action(actions, cfg, rank, reject_rank):
@@ -143,9 +180,6 @@ def evaluate_heuristic(env, method="shortest_fastest"):
         return evaluate_slot_planner(env, method)
     done = False
     while not done:
-        if method == "shortest_fastest":
-            action = shortest_fastest_action(env.actions)
-        else:
-            action = greedy_estimate_action(env.actions, env.cfg)
+        action = baseline_action(method, env)
         _, _, done, _ = env.step(action)
     return env.metrics()

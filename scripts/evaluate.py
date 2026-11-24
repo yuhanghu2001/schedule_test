@@ -1,5 +1,5 @@
 import argparse
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from datetime import datetime
 import json
 from pathlib import Path
@@ -9,9 +9,8 @@ import numpy as np
 import torch
 
 from src.config import load_config
-from src.config import Config
 from src.evaluation import evaluate_episode
-from src.models.policy import GATPPO, MODEL_NAMES
+from src.train import PRESET_NAMES, load_checkpoint, make_model, require_observation_version
 
 
 def new_run_dir():
@@ -20,8 +19,9 @@ def new_run_dir():
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--config", choices=("default", "high_congestion", "small_smoke"),
+parser.add_argument("--config", "--preset", choices=PRESET_NAMES,
                     help="评估场景配置；默认使用 checkpoint 配置")
+parser.add_argument("--observation-version", help="要求 checkpoint 使用指定观测版本")
 parser.add_argument("--checkpoint", required=True)
 parser.add_argument("--seed", type=int, help="覆盖评估种子")
 parser.add_argument("--run-dir", help="评估配置和指标目录；默认创建北京时间结果目录")
@@ -29,12 +29,13 @@ parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
 parser.add_argument("--threads", type=int, default=4)
 args = parser.parse_args()
 
-checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-model_type = MODEL_NAMES[checkpoint["model_type"]]
-training_cfg = Config(**checkpoint["config"])
+checkpoint_source = Path(args.checkpoint).resolve()
+checkpoint, training_cfg, model_type = load_checkpoint(
+    checkpoint_source, observation_version=args.observation_version,
+)
 cfg = load_config(args.config) if args.config else training_cfg
+require_observation_version(training_cfg.observation_version, cfg.observation_version)
 evaluation_seed = args.seed if args.seed is not None else cfg.evaluation_seed
-eval_cfg = replace(cfg, seed=evaluation_seed)
 device_name = (
     "cuda" if args.device == "auto" and torch.cuda.is_available()
     else "cpu" if args.device == "auto"
@@ -45,32 +46,28 @@ torch.set_num_threads(args.threads)
 torch.manual_seed(evaluation_seed)
 np.random.seed(evaluation_seed)
 
-run_dir = Path(args.run_dir) if args.run_dir else new_run_dir()
-run_dir.mkdir(parents=True, exist_ok=bool(args.run_dir))
-
-model = GATPPO(
-    gat_hidden=training_cfg.gat_hidden_dim,
-    actor_hidden=training_cfg.actor_hidden_dim,
-    critic_hidden=training_cfg.critic_hidden_dim,
-    use_gat=model_type != "ppo",
-).to(device)
+model = make_model(training_cfg, model_type).to(device)
 model.load_state_dict(checkpoint["model"])
 model.eval()
 
+run_dir = Path(args.run_dir) if args.run_dir else new_run_dir()
+run_dir.mkdir(parents=True, exist_ok=bool(args.run_dir))
 evaluation = {
-    "checkpoint_source": args.checkpoint,
+    "checkpoint_source": str(checkpoint_source),
     "checkpoint_episode": checkpoint["episode"],
     "model_type": model_type,
-    "reward_version": checkpoint["reward_version"],
-    "observation_version": checkpoint["observation_version"],
+    "reward_version": training_cfg.reward_version,
+    "observation_version": training_cfg.observation_version,
+    "enable_dag_mode": cfg.enable_dag_mode,
     "evaluation_seed": evaluation_seed,
     "device": str(device),
-    **evaluate_episode(model, eval_cfg, evaluation_seed, model_type),
+    **evaluate_episode(model, cfg, evaluation_seed, model_type),
 }
 with open(run_dir / "evaluation_config.json", "x", encoding="utf-8") as file:
     json.dump({"evaluation_config": asdict(cfg),
-               "config_source": args.config or args.checkpoint,
-               "training_config": checkpoint["config"], "model_type": model_type,
+               "config_source": args.config or str(checkpoint_source),
+               "checkpoint_source": str(checkpoint_source),
+               "training_config": asdict(training_cfg), "model_type": model_type,
                "device": str(device), "torch_threads": args.threads},
               file, ensure_ascii=False, indent=2)
 with open(run_dir / "metrics.json", "x", encoding="utf-8") as file:

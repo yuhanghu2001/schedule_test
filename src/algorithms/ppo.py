@@ -29,6 +29,7 @@ class PPOTrainer:
         self.ent_coef = self.cfg.ent_coef + (self.cfg.ppo_ent_coef_end - self.cfg.ent_coef) * progress
 
     def collect_episode(self, env):
+        env = self.model.rollout_environment(env, self.cfg.seed)
         obs = env.reset()
         episode = []
         done = False
@@ -86,7 +87,8 @@ class PPOTrainer:
                     policy_losses.append(float(policy_loss.detach()))
                     value_losses.append(float(value_loss.detach()))
                     entropies.append(float(entropy.detach()))
-                    action_count = distribution.probs.numel()
+                    action_count = (int(obs["action_mask"].sum()) if "action_mask" in obs
+                                    else distribution.probs.numel())
                     normalized_entropies.append(
                         float(entropy.detach() / np.log(action_count)) if action_count > 1 else 0.0
                     )
