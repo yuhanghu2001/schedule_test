@@ -100,14 +100,23 @@ class DAGTaskTest(unittest.TestCase):
         self.assertEqual({i for i, r in enumerate(roles) if r == "access"}, {10, 9, 6, 5})
         self.assertEqual(node_tier_roles(4), ("gateway",) * 4)
 
-    def test_dag_presets_only_switch_mode_and_versions(self):
+    def test_dag_presets_match_base_with_expected_overrides(self):
         for base, dag, rate in (("default", "hetero_dag_default", 6.0),
-                                ("high_congestion", "hetero_dag_high_congestion", 8.0),
+                                ("high_congestion", "hetero_dag_high_congestion", 8.5),
                                 ("small_smoke", "hetero_dag_smoke", 2.0)):
             cfg = load_config(base)
             self.assertFalse(cfg.enable_dag_mode)
             self.assertEqual((cfg.observation_version, cfg.reward_version),
                              ("v4_edge_only_4d_edges", "v8_dynamic_bottleneck"))
+            if dag == "hetero_dag_high_congestion":
+                cfg = replace(
+                    cfg, congestion_min=0.30, congestion_max=0.65,
+                    congestion_ar_coef=0.68, congestion_step_noise=0.20, congestion_noise=0.18,
+                    link_flap_prob=0.35, link_spike_prob=0.40, link_rate_fluctuation=0.40,
+                    deadline_slack_min=2.25, deadline_slack_max=3.45,
+                )
             self.assertEqual(load_config(dag), replace(cfg, enable_dag_mode=True, arrival_rate=rate,
                                                        observation_version="v5_dual_graph_dag",
-                                                       reward_version="v9_hetero_dag"))
+                                                       reward_version="v9_hetero_dag",
+                                                       ent_coef=0.02, ppo_ent_coef_end=0.005,
+                                                       ppo_lr_end_factor=0.25))

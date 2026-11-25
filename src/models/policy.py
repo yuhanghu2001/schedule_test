@@ -59,8 +59,9 @@ class GATPPO(nn.Module):
                 self.dag_encoder = DAGGraphEncoder(task_dim, gat_hidden)
                 task_dim = 2 * gat_hidden
         value_net_dim = gat_hidden if self.dag_mode else 2 * gat_hidden
+        cand_dim = 12 if self.dag_mode else 10
         self.actor = nn.Sequential(
-            nn.Linear(gat_hidden * 3 + task_dim + 10 + global_dim, actor_hidden),
+            nn.Linear(gat_hidden * 3 + task_dim + cand_dim + global_dim, actor_hidden),
             nn.Tanh(), nn.Linear(actor_hidden, 1),
         )
         self.critic = nn.Sequential(

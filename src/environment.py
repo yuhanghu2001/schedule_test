@@ -1218,16 +1218,25 @@ class EdgeEnv:
         targets = np.array([dag.access_edge if a.destination == -2 else a.destination
                             for a in self.actions], dtype=np.int64)
         paths = np.zeros((len(targets), self.n_graph_nodes), dtype=np.float32)
-        features = np.zeros((len(targets), 10), dtype=np.float32)
+        features = np.zeros((len(targets), 12), dtype=np.float32)
+        op_affinities = self.cfg.operator_affinity_matrix[task.op_type]
+        max_affinity = max(max(row) for row in self.cfg.operator_affinity_matrix)
+        max_setup = max(self.cfg.fpga_reconfig_delay_s, self.cfg.npu_context_load_delay_s, 1e-6)
+        abs_deadline = state.arrival + dag.deadline_s
         for k, (target, a) in enumerate(zip(targets, self.actions)):
             visits = [m for f in a.flows for m in f.path] or [target]
             paths[k] = np.bincount(visits, minlength=self.n_graph_nodes) / len(visits)
             hops = max(0, len(a.path) - 1 - int(self.cloud in a.path))
             cap = self.resources.queue_cap[target]
-            features[k] = (a.destination == -2, 0., target == self.cloud,
+            affinity = 0. if a.destination == -2 else op_affinities[a.resource] / max_affinity
+            setup_ratio = 0. if a.destination == -2 else a.setup_delay_s / max_setup
+            slack_ratio = (0. if a.destination == -2 else
+                           float(np.clip((abs_deadline - a.delivery_time_s) / dag.deadline_s, -1., 1.)))
+            features[k] = (a.destination == -2, affinity, target == self.cloud,
                            a.resource == CPU, a.resource == NPU, a.resource == FPGA,
                            hops / max(1, self.cfg.max_hops), a.delay / self.cfg.reward_delay_ref,
-                           a.energy / 10, self.resources.queues[target].sum() / cap if cap else 0.)
+                           a.energy / 10, self.resources.queues[target].sum() / cap if cap else 0.,
+                           setup_ratio, slack_ratio)
         task_vector = np.array((dag.input_data_mb / 8, dag.output_mb, task.compute_gflop / 10,
                                 dag.deadline_s / self.cfg.reward_delay_ref, dag.priority / 5,
                                 task.ram_gb / 2, dag.kind / 4, dag.allow_offload), dtype=np.float32)

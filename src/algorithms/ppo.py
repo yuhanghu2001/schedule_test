@@ -77,7 +77,7 @@ class PPOTrainer:
                 ratio = log_ratio.exp()
                 clipped_ratio = torch.clamp(ratio, 1 - self.cfg.ppo_clip, 1 + self.cfg.ppo_clip)
                 policy_loss = -torch.minimum(ratio * adv_batch, clipped_ratio * adv_batch)
-                value_loss = 0.5 * (values - ret_batch).square()
+                value_loss = nn.functional.smooth_l1_loss(values, ret_batch, reduction="none")
                 loss = (policy_loss + self.cfg.vf_coef * value_loss - self.ent_coef * entropy_batch).mean()
                 self.optimizer.zero_grad()
                 loss.backward()
