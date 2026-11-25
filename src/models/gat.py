@@ -13,18 +13,19 @@ class GraphAttentionLayer(nn.Module):
 
     def forward(self, x, adjacency, edge_features):
         h = self.transform(x)
-        n = h.size(0)
-        h_i = h[:, None, :].expand(n, n, -1)
-        h_j = h[None, :, :].expand(n, n, -1)
-        scores = self.attention(torch.cat((h_i, h_j, edge_features), dim=-1)).squeeze(-1)
+        d = h.size(-1)
+        w = self.attention.weight[0]
+        scores = ((h @ w[:d]).unsqueeze(-1)
+                  + (h @ w[d:2 * d]).unsqueeze(-2)
+                  + edge_features @ w[2 * d:])
         scores = torch.nn.functional.leaky_relu(scores, negative_slope=0.2)
         if self.norm is None:  # 旧 checkpoint 的含自环注意力
-            weights = torch.softmax(scores.masked_fill(adjacency == 0, -1e9), dim=1)
+            weights = torch.softmax(scores.masked_fill(adjacency == 0, -1e9), dim=-1)
             return self.activation(weights @ h)
         neighbors = adjacency.clone()
-        neighbors.fill_diagonal_(0)
-        weights = torch.softmax(scores.masked_fill(neighbors == 0, -1e9), dim=1)
-        weights = weights * neighbors.any(dim=1, keepdim=True)
+        neighbors.diagonal(dim1=-2, dim2=-1).zero_()
+        weights = torch.softmax(scores.masked_fill(neighbors == 0, -1e9), dim=-1)
+        weights = weights * neighbors.any(dim=-1, keepdim=True)
         return self.activation(self.norm(h + weights @ h))
 
 
@@ -49,6 +50,13 @@ class DAGGraphEncoder(nn.Module):
         self.layer = GraphAttentionLayer(node_dim, hidden, edge_dim=1)
 
     def forward(self, nodes, adjacency, edges, dag_node_mask, current_subtask_idx):
-        neighbors = adjacency * (dag_node_mask[:, None] & dag_node_mask[None, :])
+        if nodes.ndim == 2:
+            neighbors = adjacency * (dag_node_mask[:, None] & dag_node_mask[None, :])
+            h = self.layer(nodes, neighbors, edges)
+            return h[current_subtask_idx], h[dag_node_mask].mean(dim=0)
+        neighbors = adjacency * (dag_node_mask[:, :, None] & dag_node_mask[:, None, :])
         h = self.layer(nodes, neighbors, edges)
-        return h[current_subtask_idx], h[dag_node_mask].mean(dim=0)
+        batch = torch.arange(nodes.size(0), device=nodes.device)
+        mask_f = dag_node_mask.unsqueeze(-1).to(h.dtype)
+        mean_h = (h * mask_f).sum(dim=1) / mask_f.sum(dim=1)
+        return h[batch, current_subtask_idx], mean_h

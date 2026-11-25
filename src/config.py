@@ -196,12 +196,13 @@ class Config:
 def load_config(name: str = "default") -> Config:
     """返回 Python 场景配置；预设启用八邻接、网关上云和最近邻接入。"""
     dag_bases = {
-        "hetero_dag_default": "default",
-        "hetero_dag_high_congestion": "high_congestion",
-        "hetero_dag_smoke": "small_smoke",
+        "hetero_dag_default": ("default", 6.0),
+        "hetero_dag_high_congestion": ("high_congestion", 8.0),
+        "hetero_dag_smoke": ("small_smoke", 2.0),
     }
     if name in dag_bases:
-        return replace(load_config(dag_bases[name]), enable_dag_mode=True,
+        base, rate = dag_bases[name]
+        return replace(load_config(base), enable_dag_mode=True, arrival_rate=rate,
                        observation_version="v5_dual_graph_dag", reward_version="v9_hetero_dag")
     cfg = replace(Config(), cloud_gateway_count=4, terminal_access_mode="nearest",
                   edge_topology="eight_neighbor", undirected_edge_links=29)

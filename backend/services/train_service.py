@@ -29,7 +29,7 @@ METRIC_COLUMNS = set(TrainingMetric.__table__.columns.keys()) - {"id", "run_id",
 
 
 def save_checkpoint(path, model, trainer, env, cfg, model_type, episode, best_score):
-    # CLI checkpoint 格式。src.train 是直接执行的命令行入口。
+    # CLI checkpoint 格式。根目录 train.py 是命令行入口，src.trainer 提供训练引擎。
     name, keys, position, has_gauss, cached_gaussian = np.random.get_state()
     torch.save({
         "model_type": model_type,

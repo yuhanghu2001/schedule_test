@@ -40,7 +40,7 @@
 - `src/models/gat.py`：自实现两层边特征 GAT。
 - `src/models/policy.py`：GAT-PPO Actor/Critic。
 - `src/algorithms/ppo.py`：采样、GAE、PPO-Clip 更新。
-- `src/train.py`：GAT-PPO、PPO 单算法及双算法对比训练、续训、日志、checkpoint 和五指标曲线入口。
+- `src/trainer.py`：GAT-PPO、PPO 单算法及双算法对比训练、续训、日志、checkpoint 和五指标曲线引擎；根目录 `train.py` 是极简命令行入口。
 - `scripts/`：smoke、评估、多种子聚合和环境查看。
 - `backend/`：FastAPI + MySQL 上位机后端服务，直接复用 `src/` 核心环境与训练引擎。
 - `frontend/`：Vue 3 + Element Plus + ECharts + `localStorage` 上位机可视化前端。

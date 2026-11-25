@@ -16,7 +16,7 @@ from src.config import Config, load_config
 from src.environment import EdgeEnv
 from src.evaluation import EVALUATION_METRICS, evaluate_episode
 from src.plotting import save_method_bar_plot, save_rl_reward_plot
-from src.train import make_model
+from src.trainer import make_model
 
 
 RL_METHODS = ("gatppo", "ppo", "dqn", "ddpg")

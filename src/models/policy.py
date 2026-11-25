@@ -1,4 +1,5 @@
 """GAT-PPO：节点/路径图嵌入 + 候选动作打分 + Critic。"""
+import numpy as np
 import torch
 from torch import nn
 from torch.distributions import Categorical
@@ -111,23 +112,97 @@ class GATPPO(nn.Module):
             obs["global_features"], dtype=torch.float32, device=device,
         )
         k = len(targets)
-        source = h[obs["source"]].expand(k, -1)
-        dest = h[targets]
-        pooled = paths @ h
-        task_batch = task.expand(k, -1)
-        global_batch = global_features.expand(k, -1)
-        logits = self.actor(
-            torch.cat((source, dest, pooled, task_batch, extras, global_batch), dim=-1)
-        ).squeeze(-1)
+        if "action_mask" in obs:
+            mask = torch.as_tensor(obs["action_mask"], dtype=torch.bool, device=device)
+            valid = mask.nonzero(as_tuple=False).squeeze(-1)
+            m = valid.numel()
+            valid_logits = self.actor(torch.cat((
+                h[obs["source"]].expand(m, -1), h[targets[valid]], paths[valid] @ h,
+                task.expand(m, -1), extras[valid], global_features.expand(m, -1),
+            ), dim=-1)).squeeze(-1)
+            logits = torch.full((k,), float("-inf"), dtype=valid_logits.dtype, device=device)
+            logits[valid] = valid_logits
+        else:
+            logits = self.actor(torch.cat((
+                h[obs["source"]].expand(k, -1), h[targets], paths @ h,
+                task.expand(k, -1), extras, global_features.expand(k, -1),
+            ), dim=-1)).squeeze(-1)
         net_value = h.mean(dim=0)
         if not self.dag_mode:
             net_value = torch.cat((h[obs["source"]], net_value))
-        value_features = torch.cat((net_value, task, global_features))
-        value = self.critic(value_features).squeeze(-1)
-        if "action_mask" in obs:
-            mask = torch.as_tensor(obs["action_mask"], dtype=torch.bool, device=device)
-            logits = logits.masked_fill(~mask, float("-inf"))
+        value = self.critic(torch.cat((net_value, task, global_features))).squeeze(-1)
         return Categorical(logits=logits), value
+
+    def evaluate_batch(self, obs_list, actions):
+        """批量前向评估 minibatch，仅对合法候选计算 Actor，与逐条 forward 数学等价。"""
+        device = next(self.parameters()).device
+        b = len(obs_list)
+        nodes = torch.as_tensor(np.stack([o["nodes"] for o in obs_list]), dtype=torch.float32, device=device)
+        if self.use_gat:
+            adj_key = "gat_adj" if self.dag_mode else "adjacency"
+            adj = torch.as_tensor(np.stack([o[adj_key] for o in obs_list]), dtype=torch.float32, device=device)
+            edges = torch.as_tensor(np.stack([o["edges"] for o in obs_list]), dtype=torch.float32, device=device)
+            h = self.gat(nodes, adj, edges)
+        else:
+            h = self.flat_encoder(nodes)
+        if self.dag_mode:
+            dag_nodes = torch.as_tensor(np.stack([o["dag_nodes"] for o in obs_list]), dtype=torch.float32, device=device)
+            currents = torch.tensor([o["current_subtask_idx"] for o in obs_list], dtype=torch.long, device=device)
+            if self.dag_encoder is None:
+                task = dag_nodes[torch.arange(b, device=device), currents]
+            else:
+                dag_adj = torch.as_tensor(np.stack([o["dag_adj"] for o in obs_list]), dtype=torch.float32, device=device)
+                dag_edges = torch.as_tensor(np.stack([o["dag_edges"] for o in obs_list]), dtype=torch.float32, device=device)
+                dag_mask = torch.as_tensor(np.stack([o["dag_node_mask"] for o in obs_list]), dtype=torch.bool, device=device)
+                cur_emb, mean_emb = self.dag_encoder(dag_nodes, dag_adj, dag_edges, dag_mask, currents)
+                task = torch.cat((cur_emb, mean_emb), dim=-1)
+        else:
+            task = torch.as_tensor(np.stack([o["task"] for o in obs_list]), dtype=torch.float32, device=device)
+        sources = torch.tensor([o["source"] for o in obs_list], dtype=torch.long, device=device)
+        global_features = torch.as_tensor(np.stack([o["global_features"] for o in obs_list]), dtype=torch.float32, device=device)
+        net_value = h.mean(dim=1)
+        if not self.dag_mode:
+            net_value = torch.cat((h[torch.arange(b, device=device), sources], net_value), dim=-1)
+        values = self.critic(torch.cat((net_value, task, global_features), dim=-1)).squeeze(-1)
+
+        batch_ids, target_parts, path_parts, extra_parts = [], [], [], []
+        counts, local_actions = [], []
+        for i, (obs, act) in enumerate(zip(obs_list, actions)):
+            if "action_mask" in obs:
+                valid = np.flatnonzero(obs["action_mask"])
+                target_parts.append(obs["candidate_targets"][valid])
+                path_parts.append(obs["candidate_paths"][valid])
+                extra_parts.append(obs["candidate_features"][valid])
+                local_actions.append(int(np.searchsorted(valid, act)))
+                count = len(valid)
+            else:
+                target_parts.append(obs["candidate_targets"])
+                path_parts.append(obs["candidate_paths"])
+                extra_parts.append(obs["candidate_features"])
+                local_actions.append(int(act))
+                count = len(obs["candidate_targets"])
+            counts.append(count)
+            batch_ids.append(np.full(count, i, dtype=np.int64))
+
+        b_idx = torch.as_tensor(np.concatenate(batch_ids), dtype=torch.long, device=device)
+        t_idx = torch.as_tensor(np.concatenate(target_parts), dtype=torch.long, device=device)
+        paths_cat = torch.as_tensor(np.concatenate(path_parts, axis=0), dtype=torch.float32, device=device)
+        extras_cat = torch.as_tensor(np.concatenate(extra_parts, axis=0), dtype=torch.float32, device=device)
+        h_cand = h[b_idx]
+        pooled = torch.einsum("ci,cid->cd", paths_cat, h_cand)
+        all_logits = self.actor(torch.cat((
+            h[b_idx, sources[b_idx]], h[b_idx, t_idx], pooled,
+            task[b_idx], extras_cat, global_features[b_idx],
+        ), dim=-1)).squeeze(-1)
+
+        log_probs, entropies, norm_entropies = [], [], []
+        for logits_i, act_i, count in zip(all_logits.split(counts), local_actions, counts):
+            log_p = torch.log_softmax(logits_i, dim=0)
+            log_probs.append(log_p[act_i])
+            ent = -(log_p.exp() * log_p).sum() if count > 1 else logits_i.new_zeros(())
+            entropies.append(ent)
+            norm_entropies.append(float(ent.detach() / np.log(count)) if count > 1 else 0.0)
+        return torch.stack(log_probs), values, torch.stack(entropies), norm_entropies
 
     @torch.no_grad()
     def act(self, obs, greedy=False):

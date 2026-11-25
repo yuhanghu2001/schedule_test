@@ -168,7 +168,7 @@ def train_model(cfg, model_type, run_dir, *, episodes, resume=None, observation_
     }
     with open(run_dir / "train_config.json", "x", encoding="utf-8") as file:
         json.dump(run_config, file, ensure_ascii=False, indent=2)
-    print(json.dumps({"算法": model_type, "训练设备": str(device), "CPU线程数": threads}, ensure_ascii=False))
+    print(json.dumps({"算法": model_type, "训练设备": str(device), "CPU线程数": threads}, ensure_ascii=False), flush=True)
 
     last_episode = start_episode
     validation_seeds = [
@@ -204,7 +204,7 @@ def train_model(cfg, model_type, run_dir, *, episodes, resume=None, observation_
                     "任务平均完成时间": metrics["avg_delay_s"],
                     "任务平均能耗": metrics["avg_energy_j"],
                     "负载均衡度": metrics["load_balance_degree"],
-                }, ensure_ascii=False))
+                }, ensure_ascii=False), flush=True)
                 if last_episode % cfg.eval_interval == 0 or last_episode == episodes:
                     evaluation = {
                         "episode": last_episode,

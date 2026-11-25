@@ -9,7 +9,7 @@ from src.config import load_config
 from src.environment import EdgeEnv
 from src.evaluation import DAG_EVALUATION_METRICS
 from src.plotting import CORE_METRICS, load_jsonl
-from src.train import PRESET_NAMES, TRAIN_MODEL_NAMES, train_model
+from src.trainer import PRESET_NAMES, TRAIN_MODEL_NAMES, train_model
 
 
 parser = argparse.ArgumentParser()

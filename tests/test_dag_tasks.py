@@ -101,13 +101,13 @@ class DAGTaskTest(unittest.TestCase):
         self.assertEqual(node_tier_roles(4), ("gateway",) * 4)
 
     def test_dag_presets_only_switch_mode_and_versions(self):
-        for base, dag in (("default", "hetero_dag_default"),
-                          ("high_congestion", "hetero_dag_high_congestion"),
-                          ("small_smoke", "hetero_dag_smoke")):
+        for base, dag, rate in (("default", "hetero_dag_default", 6.0),
+                                ("high_congestion", "hetero_dag_high_congestion", 8.0),
+                                ("small_smoke", "hetero_dag_smoke", 2.0)):
             cfg = load_config(base)
             self.assertFalse(cfg.enable_dag_mode)
             self.assertEqual((cfg.observation_version, cfg.reward_version),
                              ("v4_edge_only_4d_edges", "v8_dynamic_bottleneck"))
-            self.assertEqual(load_config(dag), replace(cfg, enable_dag_mode=True,
+            self.assertEqual(load_config(dag), replace(cfg, enable_dag_mode=True, arrival_rate=rate,
                                                        observation_version="v5_dual_graph_dag",
                                                        reward_version="v9_hetero_dag"))

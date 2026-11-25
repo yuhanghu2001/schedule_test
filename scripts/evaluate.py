@@ -10,7 +10,7 @@ import torch
 
 from src.config import load_config
 from src.evaluation import evaluate_episode
-from src.train import PRESET_NAMES, load_checkpoint, make_model, require_observation_version
+from src.trainer import PRESET_NAMES, load_checkpoint, make_model, require_observation_version
 
 
 def new_run_dir():

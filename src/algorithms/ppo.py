@@ -66,38 +66,19 @@ class PPOTrainer:
         for _ in range(self.cfg.ppo_epochs):
             indices = torch.randperm(n)
             for start in range(0, n, self.cfg.ppo_batch_size):
-                batch_losses = []
-                for t in indices[start:start + self.cfg.ppo_batch_size].tolist():
-                    obs, action, old_logprob, _, _, _ = episode[t]
-                    distribution, value = self.model(obs)
-                    action_tensor = torch.tensor(action, device=self.device)
-                    log_ratio = distribution.log_prob(action_tensor) - old_logprob
-                    ratio = log_ratio.exp()
-                    advantage = torch.tensor(advantages[t], device=self.device)
-                    clipped_ratio = torch.clamp(
-                        ratio, 1 - self.cfg.ppo_clip, 1 + self.cfg.ppo_clip)
-                    policy_loss = -torch.minimum(
-                        ratio * advantage, clipped_ratio * advantage)
-                    value_loss = .5 * (
-                        value - torch.tensor(returns[t], device=self.device)
-                    ).square()
-                    entropy = distribution.entropy()
-                    batch_losses.append(policy_loss + self.cfg.vf_coef * value_loss
-                                        - self.ent_coef * entropy)
-                    policy_losses.append(float(policy_loss.detach()))
-                    value_losses.append(float(value_loss.detach()))
-                    entropies.append(float(entropy.detach()))
-                    action_count = (int(obs["action_mask"].sum()) if "action_mask" in obs
-                                    else distribution.probs.numel())
-                    normalized_entropies.append(
-                        float(entropy.detach() / np.log(action_count)) if action_count > 1 else 0.0
-                    )
-                    approximate_kls.append(float(((ratio - 1) - log_ratio).detach()))
-                    clip_fractions.append(float(
-                        ((ratio - 1).abs() > self.cfg.ppo_clip).detach()
-                    ))
-                    value_predictions.append(float(value.detach()))
-                loss = torch.stack(batch_losses).mean()
+                batch_idx = indices[start:start + self.cfg.ppo_batch_size].tolist()
+                batch_obs = [episode[t][0] for t in batch_idx]
+                batch_actions = [episode[t][1] for t in batch_idx]
+                old_logprobs = torch.tensor([episode[t][2] for t in batch_idx], dtype=torch.float32, device=self.device)
+                adv_batch = torch.as_tensor(advantages[batch_idx], dtype=torch.float32, device=self.device)
+                ret_batch = torch.as_tensor(returns[batch_idx], dtype=torch.float32, device=self.device)
+                log_probs, values, entropy_batch, norm_ent = self.model.evaluate_batch(batch_obs, batch_actions)
+                log_ratio = log_probs - old_logprobs
+                ratio = log_ratio.exp()
+                clipped_ratio = torch.clamp(ratio, 1 - self.cfg.ppo_clip, 1 + self.cfg.ppo_clip)
+                policy_loss = -torch.minimum(ratio * adv_batch, clipped_ratio * adv_batch)
+                value_loss = 0.5 * (values - ret_batch).square()
+                loss = (policy_loss + self.cfg.vf_coef * value_loss - self.ent_coef * entropy_batch).mean()
                 self.optimizer.zero_grad()
                 loss.backward()
                 gradient_norm = nn.utils.clip_grad_norm_(
@@ -105,6 +86,13 @@ class PPOTrainer:
                 )
                 self.optimizer.step()
                 losses.append(float(loss.item()))
+                policy_losses.extend(policy_loss.detach().cpu().tolist())
+                value_losses.extend(value_loss.detach().cpu().tolist())
+                entropies.extend(entropy_batch.detach().cpu().tolist())
+                normalized_entropies.extend(norm_ent)
+                approximate_kls.extend(((ratio - 1) - log_ratio).detach().cpu().tolist())
+                clip_fractions.extend(((ratio - 1).abs() > self.cfg.ppo_clip).float().detach().cpu().tolist())
+                value_predictions.extend(values.detach().cpu().tolist())
                 gradient_norms.append(float(gradient_norm))
         rollout_values = np.array([item[3] for item in episode], dtype=np.float32)
         return_variance = np.var(returns)

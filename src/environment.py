@@ -194,6 +194,19 @@ class EdgeEnv:
         self.background = self.base_background.copy()
         self.congestion_delta = np.zeros_like(self.background)
         self.flapped_edges = []
+        self._route_cache = {}
+
+    def _routes(self, source, destination, max_hops):
+        sig = self.adj.tobytes()
+        if getattr(self, "_route_cache_sig", None) != sig:
+            self._route_cache = {}
+            self._route_cache_sig = sig
+        key = (source, destination, max_hops)
+        cached = self._route_cache.get(key)
+        if cached is None:
+            cached = tuple(simple_routes(self.adj, source, destination, max_hops))
+            self._route_cache[key] = cached
+        return list(cached)
 
     def _slot_capacity_mb(self, a, b):
         return self.rates[a, b] * (1 - self.background[a, b]) * self.cfg.slot_seconds / 8
@@ -245,6 +258,7 @@ class EdgeEnv:
                 self.rng, self.cfg, self.adj, self.base_rates, self.base_background,
                 self.prop, self.forward_power, self.background, self.flapped_edges,
             )
+            self._route_cache = {}
 
     def _transport_terms(self, task, destination, path, realized_background=None):
         delay = task.output_mb * 8 / self.radio_rates[task.source]
@@ -419,8 +433,8 @@ class EdgeEnv:
                     # 历史配置保持源边缘直接上云，保证旧 checkpoint 可复现。
                     routes = [(source, self.cloud)] if self.adj[source, self.cloud] else []
                 else:
-                    routes = [(source,)] if destination == source else simple_routes(
-                        self.adj, source, destination, self.cfg.max_hops + int(cloud))
+                    routes = [(source,)] if destination == source else self._routes(
+                        source, destination, self.cfg.max_hops + int(cloud))
                 routes.sort(key=lambda p: sum(
                     8 * task.data_mb / (self.rates[a, b] * (1 - self.background[a, b]))
                     for a, b in zip(p, p[1:])))
@@ -881,7 +895,7 @@ class EdgeEnv:
                 continue
             cross.append(j)
             hops = self.cfg.max_hops + int(self.cloud in (source, target))
-            paths = simple_routes(self.adj, source, target, hops)
+            paths = self._routes(source, target, hops)
             link_delay = self.prop + np.divide(
                 mb * self.cfg.slot_seconds + .02 * self.slot_link_used, link_capacity,
                 out=np.zeros_like(link_capacity), where=link_capacity > 0)

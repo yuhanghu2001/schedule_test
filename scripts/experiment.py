@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from src.config import load_config
 from src.evaluation import DAG_EVALUATION_METRICS, summarize_metrics
 from src.plotting import save_method_bar_plot
-from src.train import PRESET_NAMES, TRAIN_MODEL_NAMES, require_observation_version
+from src.trainer import PRESET_NAMES, TRAIN_MODEL_NAMES, require_observation_version
 
 
 METRICS = (
@@ -97,7 +97,7 @@ for method in methods:
             ]
         else:
             subprocess.run([
-                sys.executable, "src/train.py",
+                sys.executable, "src/trainer.py",
                 "--config", args.config,
                 "--episodes", str(args.episodes),
                 "--model", method,

@@ -8,7 +8,7 @@ from src.config import load_config
 from src.environment import EdgeEnv
 from src.evaluation import DAG_EVALUATION_METRICS, evaluate_heuristic, evaluate_policy, summarize_metrics
 from src.plotting import load_jsonl
-from src.train import load_checkpoint, make_model, train_model
+from src.trainer import load_checkpoint, make_model, train_model
 
 
 class DAGPipelineTest(unittest.TestCase):

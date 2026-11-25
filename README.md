@@ -73,7 +73,7 @@ npm start
 
 ## 训练设备与线程
 
-当前小图逐任务训练在 CPU 上显著快于 GPU，**默认使用 `gatppo` 环境与 `--device cpu --threads 2`**（`conda run -n gatppo python src/train.py`）。如需在 RTX 50 系显卡上做 GPU 对照，可使用独立的 `gatppo-gpu` 环境（`conda run -n gatppo-gpu python src/train.py --device cuda --threads 2`）。`--device auto` 会在 CUDA 可用时选择 GPU，训练配置快照会记录实际设备和 CPU 线程数。
+当前小图逐任务训练在 CPU 上显著快于 GPU，**默认使用 `gatppo` 环境与 `--device cpu --threads 2`**（`conda run -n gatppo python train.py`）。根目录 `train.py` 是命令行入口，训练引擎位于 `src/trainer.py`。如需在 RTX 50 系显卡上做 GPU 对照，可使用独立的 `gatppo-gpu` 环境（`conda run -n gatppo-gpu python train.py --device cuda --threads 2`）。`--device auto` 会在 CUDA 可用时选择 GPU，训练配置快照会记录实际设备和 CPU 线程数。
 
 训练过程可用 `Ctrl+C` 手动中断。训练入口会先关闭并刷新 JSONL，再根据已完成回合重建 `training_metrics.png` 和已有的 `evaluation_metrics.png`，同时保存 last checkpoint。
 
@@ -85,13 +85,13 @@ npm start
 
 ```bash
 # 完整 GAT-PPO
-conda run --no-capture-output -n gatppo python src/train.py --model gatppo --episodes 1000
+conda run --no-capture-output -n gatppo python train.py --model gatppo --episodes 1000
 
 # 单独 PPO（MLP 节点编码，不执行 GAT 消息传播）
-conda run --no-capture-output -n gatppo python src/train.py --model ppo --episodes 1000
+conda run --no-capture-output -n gatppo python train.py --model ppo --episodes 1000
 
 # 一次运行两者：相同配置/种子/回合预算，依次独立训练并生成对比图
-conda run --no-capture-output -n gatppo python src/train.py --model gatppo and ppo --episodes 1000
+conda run --no-capture-output -n gatppo python train.py --model gatppo and ppo --episodes 1000
 ```
 
 `--model "gatppo and ppo"` 也可用；`gatpppo` 作为完整算法的拼写别名。历史 `gat`、`flat` 名称及对应权重仍可读取。`ablation.py` 已删除，原图观测打乱包装移入 `environment.py`，已有 `shuffled_gat` 实验保持可运行。

@@ -6,7 +6,7 @@ from src.baselines import feasible_indices
 from src.config import load_config
 from src.environment import EdgeEnv
 from src.evaluation import DAG_EVALUATION_METRICS, evaluate_heuristic
-from src.train import PRESET_NAMES
+from src.trainer import PRESET_NAMES
 
 
 parser = argparse.ArgumentParser(description=__doc__)

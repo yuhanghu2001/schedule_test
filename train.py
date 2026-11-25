@@ -11,7 +11,7 @@ import json
 from dataclasses import asdict, replace
 
 from src.config import load_config
-from src.train import new_run_dir, repository_path, save_comparison_plots, train_model
+from src.trainer import new_run_dir, repository_path, save_comparison_plots, train_model
 
 # ==================== 训练参数统一配置区 ====================
 EPISODES = 500

@@ -10,7 +10,7 @@ import numpy as np
 from src.config import load_config
 from src.environment import EdgeEnv
 from src.evaluation import evaluate_heuristic
-from src.train import PRESET_NAMES
+from src.trainer import PRESET_NAMES
 
 
 def new_run_dir():
